@@ -6,10 +6,22 @@ const LIFE: float = 0.12
 var start_pos: Vector2
 var end_pos: Vector2
 var time_left: float = LIFE
+var origin_node: Node2D = null
+var target_node: Node2D = null
+var origin_offset: Vector2 = Vector2.ZERO
 
-func setup(p_start: Vector2, p_end: Vector2) -> void:
+func setup(
+	p_start: Vector2,
+	p_end: Vector2,
+	p_origin_node: Node2D = null,
+	p_origin_offset: Vector2 = Vector2.ZERO,
+	p_target_node: Node2D = null
+) -> void:
 	start_pos = p_start
 	end_pos = p_end
+	origin_node = p_origin_node
+	origin_offset = p_origin_offset
+	target_node = p_target_node
 	queue_redraw()
 
 func _process(delta: float) -> void:
@@ -17,6 +29,10 @@ func _process(delta: float) -> void:
 	if time_left <= 0.0:
 		queue_free()
 	else:
+		if origin_node != null and is_instance_valid(origin_node):
+			start_pos = origin_node.global_position + origin_offset
+		if target_node != null and is_instance_valid(target_node):
+			end_pos = target_node.global_position
 		queue_redraw()
 
 func _draw() -> void:

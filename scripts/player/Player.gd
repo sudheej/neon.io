@@ -52,9 +52,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		queue_redraw()
 	if event.is_action_pressed("select_next_slot"):
 		weapon_system.select_next_slot()
+		weapon_system.sync_armed_cell_to_selection()
 		queue_redraw()
 	if event.is_action_pressed("select_prev_slot"):
 		weapon_system.select_prev_slot()
+		weapon_system.sync_armed_cell_to_selection()
 		queue_redraw()
 
 	if expand_mode and event.is_action_pressed("expand_place"):
@@ -106,12 +108,16 @@ func _draw() -> void:
 
 func _draw_cells() -> void:
 	var outline := Color(0.92, 0.96, 1.0, 0.9)
+	var outline_active := Color(0.96, 1.0, 1.0, 1.0)
 	var inner := Color(0.92, 0.96, 1.0, 0.25)
+	var armed_cell: Vector2i = weapon_system.get_armed_cell()
 	for grid_pos in shape.cells.keys():
 		var local_pos = shape.grid_to_local(grid_pos)
 		var half = PlayerShapeScript.CELL_SIZE * 0.5
 		var rect = Rect2(local_pos - Vector2.ONE * half, Vector2.ONE * PlayerShapeScript.CELL_SIZE)
-		draw_rect(rect, outline, false, 1.2)
+		var border_color := outline_active if grid_pos == armed_cell else outline
+		var border_width := 2.0 if grid_pos == armed_cell else 1.2
+		draw_rect(rect, border_color, false, border_width)
 		draw_line(rect.position + Vector2(half, 0.0), rect.position + Vector2(half, rect.size.y), inner, 1.0)
 		draw_line(rect.position + Vector2(0.0, half), rect.position + Vector2(rect.size.x, half), inner, 1.0)
 
