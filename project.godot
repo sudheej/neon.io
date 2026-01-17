@@ -1,0 +1,28 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="neon.io"
+config/features=PackedStringArray("4.5", "Forward Plus")
+config/icon="res://icon.svg"
+run/main_scene="res://scenes/Main.tscn"
+
+[input]
+
+move_up={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":87,"keycode":87,"unicode":119),Object(InputEventKey,"physical_keycode":16777232,"keycode":16777232)]}
+move_down={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":83,"keycode":83,"unicode":115),Object(InputEventKey,"physical_keycode":16777234,"keycode":16777234)]}
+move_left={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":65,"keycode":65,"unicode":97),Object(InputEventKey,"physical_keycode":16777231,"keycode":16777231)]}
+move_right={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":68,"keycode":68,"unicode":100),Object(InputEventKey,"physical_keycode":16777233,"keycode":16777233)]}
+expand_mode={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":69,"keycode":69,"unicode":101)]}
+expand_place={"deadzone":0.5,"events":[Object(InputEventMouseButton,"button_index":1,"pressed":true)]}
+select_next_slot={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":9,"keycode":9,"unicode":9)]}
+select_prev_slot={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":81,"keycode":81,"unicode":113)]}
+restart_game={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":82,"keycode":82,"unicode":114)]}
