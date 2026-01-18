@@ -2,12 +2,13 @@ extends Node2D
 class_name Player
 
 const PlayerShapeScript = preload("res://scripts/player/PlayerShape.gd")
+const WeaponSlot = preload("res://scripts/weapons/WeaponSlot.gd")
 
 const MOVE_SPEED: float = 180.0
 const ACCEL: float = 12.0
 const EXPAND_COST: float = 6.0
 var velocity: Vector2 = Vector2.ZERO
-var xp: float = 0.0
+var xp: float = 300.0
 var expand_mode: bool = false
 var show_range: bool = false
 var range_phase: float = 0.0
@@ -61,6 +62,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_range"):
 		show_range = !show_range
 		queue_redraw()
+	if event.is_action_pressed("weapon_laser"):
+		weapon_system.select_weapon_and_buy(WeaponSlot.WeaponType.LASER)
+		queue_redraw()
+	if event.is_action_pressed("weapon_stun"):
+		weapon_system.select_weapon_and_buy(WeaponSlot.WeaponType.STUN)
+		queue_redraw()
+	if event.is_action_pressed("weapon_homing"):
+		weapon_system.select_weapon_and_buy(WeaponSlot.WeaponType.HOMING)
+		queue_redraw()
 
 	if expand_mode and event.is_action_pressed("expand_place"):
 		var grid_pos = local_to_grid(to_local(get_global_mouse_position()))
@@ -74,6 +84,12 @@ func _update_commands() -> void:
 
 func add_xp(amount: float) -> void:
 	xp += amount
+
+func spend_xp(amount: float) -> bool:
+	if xp < amount:
+		return false
+	xp -= amount
+	return true
 
 func local_to_grid(v: Vector2) -> Vector2i:
 	return shape.local_to_grid(v)

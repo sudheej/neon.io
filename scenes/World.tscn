@@ -27,6 +27,18 @@ offset_bottom = 120.0
 horizontal_alignment = 2
 text = "XP: 0.0\nEnemies: 0\n[R] Restart"
 
+[node name="WeaponLegend" type="Label" parent="HUD"]
+anchor_left = 1.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_left = -220.0
+offset_top = 130.0
+offset_right = -16.0
+offset_bottom = 250.0
+horizontal_alignment = 2
+text = "> 1 Laser  Ammo:20  (+10/4)\n  2 Stun   Ammo:0   (+5/8)\n  3 Homing Ammo:0   (+3/12)"
+
 [node name="Enemies" type="Node2D" parent="."]
 
 [node name="Camera2D" type="Camera2D" parent="."]

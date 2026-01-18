@@ -5,6 +5,14 @@ const WeaponSlot = preload("res://scripts/weapons/WeaponSlot.gd")
 const PlayerShapeScript = preload("res://scripts/player/PlayerShape.gd")
 
 const FIRE_COOLDOWN: float = 0.35
+const STUN_COST: float = 8.0
+const HOMING_COST: float = 14.0
+const LASER_PACK_COST: float = 4.0
+const STUN_PACK_COST: float = 8.0
+const HOMING_PACK_COST: float = 12.0
+const LASER_PACK_AMMO: int = 10
+const STUN_PACK_AMMO: int = 5
+const HOMING_PACK_AMMO: int = 3
 
 var player: Node2D
 var shape: Node
@@ -15,6 +23,22 @@ var slot_cooldowns: Dictionary = {}
 var slot_blocked: Dictionary = {}
 var armed_cell: Vector2i = Vector2i.ZERO
 var has_armed_cell: bool = false
+var weapon_costs: Dictionary = {
+	WeaponSlot.WeaponType.LASER: 0.0,
+	WeaponSlot.WeaponType.STUN: STUN_COST,
+	WeaponSlot.WeaponType.HOMING: HOMING_COST
+}
+var weapon_cooldowns: Dictionary = {
+	WeaponSlot.WeaponType.LASER: 0.55,
+	WeaponSlot.WeaponType.STUN: 0.42,
+	WeaponSlot.WeaponType.HOMING: 0.3
+}
+var weapon_ammo: Dictionary = {
+	WeaponSlot.WeaponType.LASER: 20,
+	WeaponSlot.WeaponType.STUN: 0,
+	WeaponSlot.WeaponType.HOMING: 15
+}
+var auto_reload: bool = true
 
 func _ready() -> void:
 	player = get_parent() as Node2D
@@ -31,7 +55,7 @@ func _rebuild_slots() -> void:
 		var slot_data: Dictionary = shape.cells[grid_pos]["slots"]
 		for dir in PlayerShapeScript.DIRS:
 			var weapon_type = slot_data[dir]["weapon"]
-			var slot := WeaponSlot.new(grid_pos, dir, weapon_type)
+			var slot = WeaponSlot.new(grid_pos, dir, weapon_type)
 			slots.append(slot)
 			slot_cooldowns[slot] = 0.0
 			slot_blocked[slot] = false
@@ -58,13 +82,90 @@ func get_selected_slot() -> WeaponSlot:
 		return null
 	return slots[selected_index]
 
+func get_selected_weapon_type() -> int:
+	var slot = get_selected_slot()
+	if slot == null:
+		return WeaponSlot.WeaponType.LASER
+	return slot.weapon_type
+
+func get_weapon_cost(weapon_type: int) -> float:
+	return weapon_costs.get(weapon_type, 0.0)
+
+func get_weapon_pack_cost(weapon_type: int) -> float:
+	match weapon_type:
+		WeaponSlot.WeaponType.LASER:
+			return LASER_PACK_COST
+		WeaponSlot.WeaponType.STUN:
+			return STUN_PACK_COST
+		WeaponSlot.WeaponType.HOMING:
+			return HOMING_PACK_COST
+		_:
+			return 0.0
+
+func get_weapon_pack_ammo(weapon_type: int) -> int:
+	match weapon_type:
+		WeaponSlot.WeaponType.LASER:
+			return LASER_PACK_AMMO
+		WeaponSlot.WeaponType.STUN:
+			return STUN_PACK_AMMO
+		WeaponSlot.WeaponType.HOMING:
+			return HOMING_PACK_AMMO
+		_:
+			return 0
+
+func get_weapon_ammo(weapon_type: int) -> int:
+	return weapon_ammo.get(weapon_type, 0)
+
+func get_weapon_label(weapon_type: int) -> String:
+	match weapon_type:
+		WeaponSlot.WeaponType.LASER:
+			return "Laser"
+		WeaponSlot.WeaponType.STUN:
+			return "Stun"
+		WeaponSlot.WeaponType.HOMING:
+			return "Homing"
+		_:
+			return "Unknown"
+
+func try_set_selected_weapon(weapon_type: int) -> bool:
+	var slot = get_selected_slot()
+	if slot == null:
+		return false
+	if slot.weapon_type == weapon_type:
+		return true
+	var cost = get_weapon_cost(weapon_type)
+	if cost > 0.0:
+		if player == null or not player.has_method("spend_xp"):
+			return false
+		if not player.spend_xp(cost):
+			return false
+	_set_slot_weapon(slot, weapon_type)
+	return true
+
+func select_weapon_and_buy(weapon_type: int) -> void:
+	var slot = get_selected_slot()
+	if slot == null:
+		return
+	var pack_cost = get_weapon_pack_cost(weapon_type)
+	var pack_amount = get_weapon_pack_ammo(weapon_type)
+	if get_weapon_ammo(weapon_type) > 0:
+		_set_slot_weapon(slot, weapon_type)
+		return
+	if pack_cost <= 0.0 or pack_amount <= 0:
+		return
+	if player == null or not player.has_method("spend_xp"):
+		return
+	if player.spend_xp(pack_cost):
+		weapon_ammo[weapon_type] = get_weapon_ammo(weapon_type) + pack_amount
+		_set_slot_weapon(slot, weapon_type)
+
 func set_armed_cell(grid_pos: Vector2i) -> void:
 	armed_cell = grid_pos
 	has_armed_cell = true
 	_sync_selection_to_armed_cell()
 
 func sync_armed_cell_to_selection() -> void:
-	var slot := get_selected_slot()
+	var slot = get_selected_slot()
 	if slot == null:
 		return
 	armed_cell = slot.grid_pos
@@ -81,60 +182,105 @@ func process_weapons(delta: float, enemies: Array[Node]) -> void:
 	if slots.is_empty() or shape == null:
 		return
 
-	var slot := get_selected_slot()
+	var slot = get_selected_slot()
 	if slot == null:
 		return
 	slot_cooldowns[slot] = maxf(slot_cooldowns[slot] - delta, 0.0)
-	var origin := get_slot_world_origin(slot)
-	var blocked := false
+	var origin = get_slot_world_origin(slot)
+	var blocked = false
 	slot_blocked[slot] = blocked
 	if blocked:
 		return
 	if slot_cooldowns[slot] > 0.0:
 		return
+	var weapon_type = slot.weapon_type
+	if weapon_type == WeaponSlot.WeaponType.HOMING:
+		if get_tree().get_nodes_in_group("homing_missiles").size() > 0:
+			return
+	if get_weapon_ammo(weapon_type) <= 0:
+		if auto_reload and _try_auto_reload(weapon_type):
+			pass
+		else:
+			return
 
-	var target := _find_nearest_enemy_in_range(origin, slot.range, enemies)
+	var target = _find_nearest_enemy_in_range(origin, slot.range, enemies)
 	if target == null:
 		return
 
 	_fire_at_target(slot, origin, target)
-	slot_cooldowns[slot] = FIRE_COOLDOWN
+	_consume_ammo(weapon_type, 1)
+	slot_cooldowns[slot] = weapon_cooldowns.get(weapon_type, FIRE_COOLDOWN)
 
 func is_slot_blocked(slot: WeaponSlot) -> bool:
 	return slot_blocked.get(slot, false)
 
 func _find_nearest_enemy_in_range(origin: Vector2, max_range: float, enemies: Array[Node]) -> Node2D:
-	var best_dist := max_range
+	var best_dist = max_range
 	var best_enemy: Node2D = null
 	for enemy in enemies:
-		var enemy_node := enemy as Node2D
+		var enemy_node = enemy as Node2D
 		if enemy_node == null:
 			continue
-		var dist := origin.distance_to(enemy_node.global_position)
+		var dist = origin.distance_to(enemy_node.global_position)
 		if dist <= best_dist:
 			best_dist = dist
 			best_enemy = enemy_node
 	return best_enemy
 
 func _fire_at_target(slot: WeaponSlot, origin: Vector2, target: Node2D) -> void:
-	var world := get_tree().get_first_node_in_group("world") as Node
+	var world = get_tree().get_first_node_in_group("world") as Node
 	if world == null:
 		return
 
-	var laser := preload("res://scripts/weapons/projectiles/LaserShot.gd").new()
-	laser.global_position = Vector2.ZERO
 	var local_pos = shape.grid_to_local(slot.grid_pos)
-	laser.setup(origin, target.global_position, player, local_pos, target)
-	world.add_child(laser)
-
-	var damage := 5.0
-	var stun_duration := 0.0
+	var damage = 4.0
+	var stun_duration = 0.0
 	if slot.weapon_type == WeaponSlot.WeaponType.STUN:
-		stun_duration = 0.6
+		stun_duration = 0.65
 		damage = 3.0
+	elif slot.weapon_type == WeaponSlot.WeaponType.HOMING:
+		damage = 7.0
 
-	if target.has_method("apply_damage"):
-		target.apply_damage(damage, stun_duration)
+	if slot.weapon_type == WeaponSlot.WeaponType.HOMING:
+		var homing = preload("res://scripts/weapons/projectiles/HomingShot.gd").new()
+		homing.global_position = origin
+		homing.setup(origin, target, damage)
+		world.add_child(homing)
+	else:
+		var laser = preload("res://scripts/weapons/projectiles/LaserShot.gd").new()
+		laser.global_position = Vector2.ZERO
+		laser.setup(origin, target.global_position, player, local_pos, target)
+		world.add_child(laser)
+
+	if slot.weapon_type != WeaponSlot.WeaponType.HOMING:
+		if target.has_method("apply_damage"):
+			target.apply_damage(damage, stun_duration)
+
+func _set_slot_weapon(slot: WeaponSlot, weapon_type: int) -> void:
+	slot.weapon_type = weapon_type
+	if shape == null:
+		return
+	if not shape.cells.has(slot.grid_pos):
+		return
+	var slot_data: Dictionary = shape.cells[slot.grid_pos]["slots"]
+	if slot_data.has(slot.dir):
+		slot_data[slot.dir]["weapon"] = weapon_type
+
+func _consume_ammo(weapon_type: int, amount: int) -> void:
+	var current = get_weapon_ammo(weapon_type)
+	weapon_ammo[weapon_type] = max(current - amount, 0)
+
+func _try_auto_reload(weapon_type: int) -> bool:
+	var pack_cost = get_weapon_pack_cost(weapon_type)
+	var pack_amount = get_weapon_pack_ammo(weapon_type)
+	if pack_cost <= 0.0 or pack_amount <= 0:
+		return false
+	if player == null or not player.has_method("spend_xp"):
+		return false
+	if not player.spend_xp(pack_cost):
+		return false
+	weapon_ammo[weapon_type] = get_weapon_ammo(weapon_type) + pack_amount
+	return true
 
 func _set_default_armed_cell() -> void:
 	if shape == null:

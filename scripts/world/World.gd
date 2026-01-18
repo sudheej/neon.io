@@ -1,6 +1,8 @@
 extends Node2D
 class_name World
 
+const WeaponSlot = preload("res://scripts/weapons/WeaponSlot.gd")
+
 const ENEMY_COUNT: int = 10
 const ENEMY_SPAWN_RADIUS: float = 260.0
 const MAX_ENEMIES: int = 16
@@ -12,6 +14,7 @@ var spawn_timer: float = 0.0
 @onready var enemies_root = $Enemies
 @onready var camera = $Camera2D
 @onready var hud_label: Label = $HUD/Info
+@onready var weapon_legend: Label = $HUD/WeaponLegend
 
 func _ready() -> void:
 	add_to_group("world")
@@ -27,6 +30,7 @@ func _process(delta: float) -> void:
 	var enemies: Array[Node] = _get_enemy_list()
 	player.weapon_system.process_weapons(delta, enemies)
 	_update_hud(enemies)
+	_update_weapon_legend()
 	_maybe_spawn_enemy(delta, enemies.size())
 
 func _get_enemy_list() -> Array[Node]:
@@ -58,4 +62,32 @@ func _maybe_spawn_enemy(delta: float, enemy_count: int) -> void:
 func _update_hud(enemies: Array[Node]) -> void:
 	if hud_label == null:
 		return
-	hud_label.text = "XP: %.1f\nEnemies: %d\n[R] Restart" % [player.xp, enemies.size()]
+	hud_label.text = "Credits: %.1f\nEnemies: %d\n[R] Restart" % [player.xp, enemies.size()]
+
+func _update_weapon_legend() -> void:
+	if weapon_legend == null:
+		return
+	var weapon_type = player.weapon_system.get_selected_weapon_type()
+	var laser_cost = player.weapon_system.get_weapon_pack_cost(WeaponSlot.WeaponType.LASER)
+	var stun_cost = player.weapon_system.get_weapon_pack_cost(WeaponSlot.WeaponType.STUN)
+	var homing_cost = player.weapon_system.get_weapon_pack_cost(WeaponSlot.WeaponType.HOMING)
+	var laser_ammo = player.weapon_system.get_weapon_ammo(WeaponSlot.WeaponType.LASER)
+	var stun_ammo = player.weapon_system.get_weapon_ammo(WeaponSlot.WeaponType.STUN)
+	var homing_ammo = player.weapon_system.get_weapon_ammo(WeaponSlot.WeaponType.HOMING)
+	var laser_pack = player.weapon_system.get_weapon_pack_ammo(WeaponSlot.WeaponType.LASER)
+	var stun_pack = player.weapon_system.get_weapon_pack_ammo(WeaponSlot.WeaponType.STUN)
+	var homing_pack = player.weapon_system.get_weapon_pack_ammo(WeaponSlot.WeaponType.HOMING)
+	weapon_legend.text = "%s 1 Laser  Ammo:%d  (+%d/%.0f)\n%s 2 Stun   Ammo:%d  (+%d/%.0f)\n%s 3 Homing Ammo:%d  (+%d/%.0f)" % [
+		">" if weapon_type == WeaponSlot.WeaponType.LASER else " ",
+		laser_ammo,
+		laser_pack,
+		laser_cost,
+		">" if weapon_type == WeaponSlot.WeaponType.STUN else " ",
+		stun_ammo,
+		stun_pack,
+		stun_cost,
+		">" if weapon_type == WeaponSlot.WeaponType.HOMING else " ",
+		homing_ammo,
+		homing_pack,
+		homing_cost
+	]

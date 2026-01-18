@@ -27,6 +27,9 @@ select_next_slot={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycod
 select_prev_slot={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":91,"keycode":91,"unicode":91)]}
 restart_game={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":82,"keycode":82,"unicode":114)]}
 toggle_range={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":81,"keycode":81,"unicode":113)]}
+weapon_laser={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":49,"keycode":49,"unicode":49)]}
+weapon_stun={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":50,"keycode":50,"unicode":50)]}
+weapon_homing={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":51,"keycode":51,"unicode":51)]}
 
 [rendering]
 
