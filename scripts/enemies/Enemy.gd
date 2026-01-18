@@ -2,6 +2,7 @@ extends Node2D
 class_name Enemy
 
 const SIZE: float = 20.0
+const XP_ON_KILL: float = 5.0
 
 var health: float = 20.0
 var base_speed: float = 60.0
@@ -37,7 +38,13 @@ func apply_damage(amount: float, stun_duration: float) -> void:
 	if stun_duration > 0.0:
 		stun_time = maxf(stun_time, stun_duration)
 	if health <= 0.0:
+		_grant_xp()
 		queue_free()
+
+func _grant_xp() -> void:
+	var player := get_tree().get_first_node_in_group("player")
+	if player != null and player.has_method("add_xp"):
+		player.add_xp(XP_ON_KILL)
 
 func _draw() -> void:
 	var half := SIZE * 0.5

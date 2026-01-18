@@ -24,5 +24,10 @@ move_right={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":68,
 expand_mode={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":69,"keycode":69,"unicode":101)]}
 expand_place={"deadzone":0.5,"events":[Object(InputEventMouseButton,"button_index":1,"pressed":true)]}
 select_next_slot={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":9,"keycode":9,"unicode":9)]}
-select_prev_slot={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":81,"keycode":81,"unicode":113)]}
+select_prev_slot={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":91,"keycode":91,"unicode":91)]}
 restart_game={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":82,"keycode":82,"unicode":114)]}
+toggle_range={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":81,"keycode":81,"unicode":113)]}
+
+[rendering]
+
+anti_aliasing/quality/msaa_2d=3

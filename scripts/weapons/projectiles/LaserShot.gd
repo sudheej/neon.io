@@ -2,6 +2,7 @@ extends Node2D
 class_name LaserShot
 
 const LIFE: float = 0.12
+const LaserShader = preload("res://scripts/weapons/projectiles/LaserGlow.gdshader")
 
 var start_pos: Vector2
 var end_pos: Vector2
@@ -9,6 +10,11 @@ var time_left: float = LIFE
 var origin_node: Node2D = null
 var target_node: Node2D = null
 var origin_offset: Vector2 = Vector2.ZERO
+
+func _ready() -> void:
+	var mat := ShaderMaterial.new()
+	mat.shader = LaserShader
+	material = mat
 
 func setup(
 	p_start: Vector2,

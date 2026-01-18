@@ -136,9 +136,6 @@ func _fire_at_target(slot: WeaponSlot, origin: Vector2, target: Node2D) -> void:
 	if target.has_method("apply_damage"):
 		target.apply_damage(damage, stun_duration)
 
-	if player.has_method("add_xp"):
-		player.add_xp(damage)
-
 func _set_default_armed_cell() -> void:
 	if shape == null:
 		return

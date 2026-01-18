@@ -6,11 +6,11 @@ const PlayerShapeScript = preload("res://scripts/player/PlayerShape.gd")
 const MOVE_SPEED: float = 180.0
 const ACCEL: float = 12.0
 const EXPAND_COST: float = 6.0
-const XP_RATE: float = 1.2
-
 var velocity: Vector2 = Vector2.ZERO
 var xp: float = 0.0
 var expand_mode: bool = false
+var show_range: bool = false
+var range_phase: float = 0.0
 
 var move_command: Vector2 = Vector2.ZERO
 var expand_command: bool = false
@@ -26,11 +26,11 @@ func _ready() -> void:
 	add_to_group("player")
 
 func _process(delta: float) -> void:
-	xp += XP_RATE * delta
 	pulse_timer -= delta
 	if pulse_timer <= 0.0:
 		_spawn_pulse()
 		pulse_timer = randf_range(0.15, 0.35)
+	range_phase = fmod(range_phase + delta * 0.6, TAU)
 
 	for i in range(pulses.size() - 1, -1, -1):
 		pulses[i]["time"] -= delta
@@ -57,6 +57,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("select_prev_slot"):
 		weapon_system.select_prev_slot()
 		weapon_system.sync_armed_cell_to_selection()
+		queue_redraw()
+	if event.is_action_pressed("toggle_range"):
+		show_range = !show_range
 		queue_redraw()
 
 	if expand_mode and event.is_action_pressed("expand_place"):
@@ -171,19 +174,39 @@ func _draw_dashed_line(from: Vector2, to: Vector2, color: Color, dash: float, ga
 		dist += dash + gap
 
 func _draw_selected_slot_range() -> void:
+	if not show_range:
+		return
 	var slot = weapon_system.get_selected_slot()
 	if slot == null:
 		return
 	var origin = weapon_system.get_slot_world_origin(slot)
 	var local_origin = to_local(origin)
 	var blocked = weapon_system.is_slot_blocked(slot)
-	var glow = Color(0.6, 0.2, 0.2, 0.25) if blocked else Color(0.2, 0.9, 1.0, 0.22)
-	var core = Color(0.9, 0.4, 0.4, 0.5) if blocked else Color(0.4, 1.0, 1.0, 0.7)
-	_draw_ring(local_origin, slot.range, glow, 3.5)
-	_draw_ring(local_origin, slot.range, core, 1.2)
+	var glow = Color(0.6, 0.2, 0.2, 0.35) if blocked else Color(0.2, 0.9, 1.0, 0.25)
+	var core = Color(0.9, 0.4, 0.4, 0.6) if blocked else Color(0.4, 1.0, 1.0, 0.75)
+	_draw_dotted_ring(local_origin, slot.range, glow, 3.0, range_phase, 0.08, 0.12)
+	_draw_dotted_ring(local_origin, slot.range, core, 1.4, range_phase + 0.3, 0.06, 0.12)
 
 func _draw_ring(center: Vector2, radius: float, color: Color, width: float) -> void:
 	draw_arc(center, radius, 0.0, TAU, 96, color, width)
+
+func _draw_dotted_ring(
+	center: Vector2,
+	radius: float,
+	color: Color,
+	width: float,
+	phase: float,
+	dash_angle: float,
+	gap_angle: float
+) -> void:
+	var angle := phase
+	while angle < TAU + phase:
+		var a0 := angle
+		var a1 := minf(angle + dash_angle, TAU + phase)
+		var p0 := center + Vector2(cos(a0), sin(a0)) * radius
+		var p1 := center + Vector2(cos(a1), sin(a1)) * radius
+		draw_line(p0, p1, color, width)
+		angle += dash_angle + gap_angle
 
 func _spawn_pulse() -> void:
 	if shape.cells.is_empty():
