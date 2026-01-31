@@ -15,7 +15,11 @@ func _process(_delta: float) -> void:
 		var health = parent.get("health")
 		if max_health != null and health != null and float(max_health) > 0.0:
 			var target_ratio = clamp(float(health) / float(max_health), 0.0, 1.0)
-			display_ratio = lerpf(display_ratio, target_ratio, 1.0 - pow(0.001, _delta * LERP_SPEED))
+			var lerp_speed = LERP_SPEED
+			var is_ai = parent.get("is_ai")
+			if is_ai != null and not bool(is_ai):
+				lerp_speed *= 0.45
+			display_ratio = lerpf(display_ratio, target_ratio, 1.0 - pow(0.001, _delta * lerp_speed))
 	queue_redraw()
 
 func _draw() -> void:

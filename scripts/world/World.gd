@@ -14,6 +14,7 @@ const AIControllerScript = preload("res://scripts/ai/AIController.gd")
 var spawn_timer: float = 0.0
 var elapsed: float = 0.0
 var game_over: bool = false
+var game_over_pulse: float = 0.0
 
 @onready var player = $Player
 @onready var enemies_root = $Enemies
@@ -21,6 +22,7 @@ var game_over: bool = false
 @onready var hud_label: Label = $HUD/Info
 @onready var weapon_legend: Label = $HUD/WeaponLegend
 @onready var game_over_layer: CanvasLayer = $GameOver
+@onready var game_over_time: Label = $GameOver/TimeSurvived
 
 func _ready() -> void:
 	add_to_group("world")
@@ -35,6 +37,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _process(delta: float) -> void:
 	if game_over:
+		game_over_pulse = fmod(game_over_pulse + delta, TAU)
+		_update_game_over_time()
 		return
 	if player == null or not is_instance_valid(player):
 		return
@@ -97,8 +101,10 @@ func _current_enemy_cap() -> int:
 
 func _on_player_died(_victim: Node) -> void:
 	game_over = true
+	game_over_pulse = 0.0
 	if game_over_layer != null:
 		game_over_layer.visible = true
+	_update_game_over_time()
 
 func _update_weapon_legend() -> void:
 	if weapon_legend == null:
@@ -127,3 +133,14 @@ func _update_weapon_legend() -> void:
 		homing_pack,
 		homing_cost
 	]
+
+func _update_game_over_time() -> void:
+	if game_over_time == null:
+		return
+	var total = int(round(elapsed))
+	var hours = total / 3600
+	var minutes = (total % 3600) / 60
+	var seconds = total % 60
+	game_over_time.text = "Time Survived: %02d:%02d:%02d" % [hours, minutes, seconds]
+	var pulse = 0.9 + 0.12 * sin(game_over_pulse * 2.0)
+	game_over_time.modulate = Color(1.0, 1.0, 1.0, pulse)

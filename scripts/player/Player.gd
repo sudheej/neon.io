@@ -9,6 +9,7 @@ signal died(victim: Node)
 const MOVE_SPEED: float = 180.0
 const ACCEL: float = 12.0
 const EXPAND_COST: float = 6.0
+const HUMAN_DAMAGE_MULTIPLIER: float = 0.6
 var velocity: Vector2 = Vector2.ZERO
 var xp: float = 300.0
 var expand_mode: bool = false
@@ -132,6 +133,8 @@ func set_ai_move_command(dir: Vector2) -> void:
 	ai_move = dir
 
 func apply_damage(amount: float, stun_duration: float, source: Node = null) -> void:
+	if not is_ai:
+		amount *= HUMAN_DAMAGE_MULTIPLIER
 	health -= amount
 	regen_timer = regen_delay
 	if stun_duration > 0.0:

@@ -20,6 +20,8 @@ var time_left: float = LIFE
 var origin_node: Node2D = null
 var target_node: Node2D = null
 var origin_offset: Vector2 = Vector2.ZERO
+var beam_color: Color = Color(0.4, 1.0, 1.0, 0.6)
+var core_color: Color = Color(0.8, 1.0, 1.0, 0.9)
 var rng := RandomNumberGenerator.new()
 static var sfx_cache: Array[AudioStream] = []
 static var sfx_checked := false
@@ -45,13 +47,17 @@ func setup(
 	p_end: Vector2,
 	p_origin_node: Node2D = null,
 	p_origin_offset: Vector2 = Vector2.ZERO,
-	p_target_node: Node2D = null
+	p_target_node: Node2D = null,
+	p_beam_color: Color = Color(0.4, 1.0, 1.0, 0.6),
+	p_core_color: Color = Color(0.8, 1.0, 1.0, 0.9)
 ) -> void:
 	start_pos = p_start
 	end_pos = p_end
 	origin_node = p_origin_node
 	origin_offset = p_origin_offset
 	target_node = p_target_node
+	beam_color = p_beam_color
+	core_color = p_core_color
 	global_position = start_pos
 	queue_redraw()
 
@@ -71,8 +77,10 @@ func _draw() -> void:
 	if time_left <= 0.0:
 		return
 	var t := time_left / LIFE
-	var color := Color(0.4, 1.0, 1.0, 0.6 * t)
-	var core := Color(0.8, 1.0, 1.0, 0.9 * t)
+	var color := beam_color
+	color.a *= t
+	var core := core_color
+	core.a *= t
 	draw_line(Vector2.ZERO, to_local(end_pos), color, 3.0)
 	draw_line(Vector2.ZERO, to_local(end_pos), core, 1.0)
 

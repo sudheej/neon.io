@@ -67,6 +67,19 @@ horizontal_alignment = 1
 vertical_alignment = 1
 text = "GAME OVER\nPress R to restart"
 
+[node name="TimeSurvived" type="Label" parent="GameOver"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -140.0
+offset_top = 18.0
+offset_right = 140.0
+offset_bottom = 46.0
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "Time Survived: 00:00:00"
+
 [node name="Enemies" type="Node2D" parent="."]
 
 [node name="Camera2D" type="Camera2D" parent="."]

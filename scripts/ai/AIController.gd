@@ -7,7 +7,7 @@ const SEEK_RANGE: float = 420.0
 const TOO_CLOSE: float = 90.0
 const DODGE_RADIUS: float = 120.0
 const SEPARATION_RADIUS: float = 60.0
-const RAMP_TIME: float = 75.0
+const RAMP_TIME: float = 120.0
 
 var player: Node2D = null
 var current_target: Node2D = null
@@ -152,4 +152,4 @@ func _difficulty_scale() -> float:
 	if elapsed == null:
 		return 0.5
 	var t = clamp(float(elapsed) / RAMP_TIME, 0.0, 1.0)
-	return lerpf(0.45, 1.0, t)
+	return lerpf(0.35, 0.9, t)

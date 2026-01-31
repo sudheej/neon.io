@@ -261,7 +261,18 @@ func _fire_at_target(slot: WeaponSlot, origin: Vector2, target: Node2D) -> void:
 	else:
 		var laser = preload("res://scripts/weapons/projectiles/LaserShot.gd").new()
 		laser.global_position = Vector2.ZERO
-		laser.setup(origin, target.global_position, player, local_pos, target)
+		if slot.weapon_type == WeaponSlot.WeaponType.STUN:
+			laser.setup(
+				origin,
+				target.global_position,
+				player,
+				local_pos,
+				target,
+				Color(0.2, 1.0, 0.4, 0.6),
+				Color(0.6, 1.0, 0.7, 0.9)
+			)
+		else:
+			laser.setup(origin, target.global_position, player, local_pos, target)
 		world.add_child(laser)
 
 	if slot.weapon_type != WeaponSlot.WeaponType.HOMING:
