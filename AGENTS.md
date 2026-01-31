@@ -4,6 +4,7 @@ Project: Godot 4.5.1 game prototype in `/home/xtechkid/Work/neon.io`.
 
 Quick run:
 - `./run_game.sh` (uses `~/Downloads/Godot_v4.5.1-stable_linux.x86_64` or `GODOT_BIN`).
+- When suggesting playtests, run `./run_game.sh` first and check the console for errors before recommending the user play.
 
 Core scenes:
 - `scenes/Main.tscn` -> `scenes/World.tscn`
