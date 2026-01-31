@@ -5,8 +5,8 @@ const WeaponSlot = preload("res://scripts/weapons/WeaponSlot.gd")
 const PlayerShapeScript = preload("res://scripts/player/PlayerShape.gd")
 
 const FIRE_COOLDOWN: float = 0.35
-const STUN_COST: float = 8.0
-const HOMING_COST: float = 14.0
+const STUN_COST: float = 0.0
+const HOMING_COST: float = 0.0
 const LASER_PACK_COST: float = 4.0
 const STUN_PACK_COST: float = 8.0
 const HOMING_PACK_COST: float = 12.0
@@ -39,6 +39,7 @@ var weapon_ammo: Dictionary = {
 	WeaponSlot.WeaponType.HOMING: 15
 }
 var auto_reload: bool = true
+var preferred_target: Node2D = null
 
 func _ready() -> void:
 	player = get_parent() as Node2D
@@ -203,7 +204,7 @@ func process_weapons(delta: float, enemies: Array[Node]) -> void:
 		else:
 			return
 
-	var target = _find_nearest_enemy_in_range(origin, slot.range, enemies)
+	var target = _find_target_in_range(origin, slot.range, enemies)
 	if target == null:
 		return
 
@@ -227,6 +228,17 @@ func _find_nearest_enemy_in_range(origin: Vector2, max_range: float, enemies: Ar
 			best_enemy = enemy_node
 	return best_enemy
 
+func _find_target_in_range(origin: Vector2, max_range: float, enemies: Array[Node]) -> Node2D:
+	if preferred_target != null and is_instance_valid(preferred_target):
+		if enemies.has(preferred_target):
+			var dist = origin.distance_to(preferred_target.global_position)
+			if dist <= max_range:
+				return preferred_target
+	return _find_nearest_enemy_in_range(origin, max_range, enemies)
+
+func set_preferred_target(target: Node2D) -> void:
+	preferred_target = target
+
 func _fire_at_target(slot: WeaponSlot, origin: Vector2, target: Node2D) -> void:
 	var world = get_tree().get_first_node_in_group("world") as Node
 	if world == null:
@@ -244,7 +256,7 @@ func _fire_at_target(slot: WeaponSlot, origin: Vector2, target: Node2D) -> void:
 	if slot.weapon_type == WeaponSlot.WeaponType.HOMING:
 		var homing = preload("res://scripts/weapons/projectiles/HomingShot.gd").new()
 		homing.global_position = origin
-		homing.setup(origin, target, damage)
+		homing.setup(origin, target, damage, player)
 		world.add_child(homing)
 	else:
 		var laser = preload("res://scripts/weapons/projectiles/LaserShot.gd").new()
@@ -254,7 +266,7 @@ func _fire_at_target(slot: WeaponSlot, origin: Vector2, target: Node2D) -> void:
 
 	if slot.weapon_type != WeaponSlot.WeaponType.HOMING:
 		if target.has_method("apply_damage"):
-			target.apply_damage(damage, stun_duration)
+			target.apply_damage(damage, stun_duration, player)
 
 func _set_slot_weapon(slot: WeaponSlot, weapon_type: int) -> void:
 	slot.weapon_type = weapon_type

@@ -4,6 +4,8 @@ class_name Player
 const PlayerShapeScript = preload("res://scripts/player/PlayerShape.gd")
 const WeaponSlot = preload("res://scripts/weapons/WeaponSlot.gd")
 
+signal died(victim: Node)
+
 const MOVE_SPEED: float = 180.0
 const ACCEL: float = 12.0
 const EXPAND_COST: float = 6.0
@@ -12,6 +14,12 @@ var xp: float = 300.0
 var expand_mode: bool = false
 var show_range: bool = false
 var range_phase: float = 0.0
+var is_ai: bool = false
+var ai_move: Vector2 = Vector2.ZERO
+var max_health: float = 40.0
+var health: float = 40.0
+var stun_time: float = 0.0
+var damage_flash: float = 0.0
 
 var move_command: Vector2 = Vector2.ZERO
 var expand_command: bool = false
@@ -24,7 +32,9 @@ var pulses: Array[Dictionary] = []
 @onready var weapon_system = $WeaponSystem
 
 func _ready() -> void:
-	add_to_group("player")
+	add_to_group("combatants")
+	if not is_ai:
+		add_to_group("player")
 
 func _process(delta: float) -> void:
 	pulse_timer -= delta
@@ -32,6 +42,10 @@ func _process(delta: float) -> void:
 		_spawn_pulse()
 		pulse_timer = randf_range(0.15, 0.35)
 	range_phase = fmod(range_phase + delta * 0.6, TAU)
+	if stun_time > 0.0:
+		stun_time = maxf(stun_time - delta, 0.0)
+	if damage_flash > 0.0:
+		damage_flash = maxf(damage_flash - delta, 0.0)
 
 	for i in range(pulses.size() - 1, -1, -1):
 		pulses[i]["time"] -= delta
@@ -41,12 +55,19 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _physics_process(delta: float) -> void:
-	_update_commands()
+	if is_ai:
+		move_command = ai_move
+	else:
+		_update_commands()
 	var target_vel = move_command.normalized() * MOVE_SPEED
+	if stun_time > 0.0:
+		target_vel *= 0.35
 	velocity = velocity.lerp(target_vel, 1.0 - pow(0.001, delta * ACCEL))
 	global_position += velocity * delta
 
 func _unhandled_input(event: InputEvent) -> void:
+	if is_ai:
+		return
 	if event.is_action_pressed("expand_mode"):
 		expand_mode = !expand_mode
 		expand_command = expand_mode
@@ -90,6 +111,29 @@ func spend_xp(amount: float) -> bool:
 		return false
 	xp -= amount
 	return true
+
+func set_ai_enabled(enabled: bool) -> void:
+	is_ai = enabled
+	if is_ai:
+		if is_in_group("player"):
+			remove_from_group("player")
+	else:
+		if not is_in_group("player"):
+			add_to_group("player")
+
+func set_ai_move_command(dir: Vector2) -> void:
+	ai_move = dir
+
+func apply_damage(amount: float, stun_duration: float, source: Node = null) -> void:
+	health -= amount
+	if stun_duration > 0.0:
+		stun_time = maxf(stun_time, stun_duration)
+	damage_flash = 0.25
+	if health <= 0.0:
+		if source != null and source.has_method("add_xp"):
+			source.add_xp(10.0)
+		emit_signal("died", self)
+		queue_free()
 
 func local_to_grid(v: Vector2) -> Vector2i:
 	return shape.local_to_grid(v)

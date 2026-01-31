@@ -14,17 +14,20 @@ var velocity: Vector2 = Vector2.ZERO
 var trail: Array[Vector2] = []
 const TRAIL_POINTS: int = 10
 var damage: float = 0.0
+var source: Node = null
 
 func _ready() -> void:
 	var mat = ShaderMaterial.new()
 	mat.shader = GlowShader
 	material = mat
 	add_to_group("homing_missiles")
+	add_to_group("projectiles")
 
-func setup(start_pos: Vector2, target_node: Node2D, damage_amount: float) -> void:
+func setup(start_pos: Vector2, target_node: Node2D, damage_amount: float, source_node: Node = null) -> void:
 	global_position = start_pos
 	target = target_node
 	damage = damage_amount
+	source = source_node
 	queue_redraw()
 
 func _process(delta: float) -> void:
@@ -37,7 +40,10 @@ func _process(delta: float) -> void:
 		var dist = dir.length()
 		if dist <= HIT_RADIUS:
 			if target.has_method("apply_damage"):
-				target.apply_damage(damage, 0.0)
+				if source != null and is_instance_valid(source):
+					target.apply_damage(damage, 0.0, source)
+				else:
+					target.apply_damage(damage, 0.0, null)
 			queue_free()
 			return
 		var desired = dir.normalized()
