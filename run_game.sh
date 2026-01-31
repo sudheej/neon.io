@@ -2,6 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VERBOSE_FLAG=""
+if [[ "${1:-}" == "--verbose" ]]; then
+  VERBOSE_FLAG="--verbose"
+fi
 
 if [[ -n "${GODOT_BIN:-}" ]]; then
   BIN="$GODOT_BIN"
@@ -16,4 +20,4 @@ else
   exit 1
 fi
 
-exec "$BIN" --path "$ROOT_DIR"
+exec "$BIN" $VERBOSE_FLAG --path "$ROOT_DIR"

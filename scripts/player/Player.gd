@@ -20,6 +20,9 @@ var max_health: float = 40.0
 var health: float = 40.0
 var stun_time: float = 0.0
 var damage_flash: float = 0.0
+var regen_delay: float = 3.0
+var regen_rate: float = 4.0
+var regen_timer: float = 0.0
 
 var move_command: Vector2 = Vector2.ZERO
 var expand_command: bool = false
@@ -37,6 +40,10 @@ func _ready() -> void:
 		add_to_group("player")
 
 func _process(delta: float) -> void:
+	if regen_timer > 0.0:
+		regen_timer = maxf(regen_timer - delta, 0.0)
+	elif health < max_health:
+		health = minf(max_health, health + regen_rate * delta)
 	pulse_timer -= delta
 	if pulse_timer <= 0.0:
 		_spawn_pulse()
@@ -126,6 +133,7 @@ func set_ai_move_command(dir: Vector2) -> void:
 
 func apply_damage(amount: float, stun_duration: float, source: Node = null) -> void:
 	health -= amount
+	regen_timer = regen_delay
 	if stun_duration > 0.0:
 		stun_time = maxf(stun_time, stun_duration)
 	damage_flash = 0.25
