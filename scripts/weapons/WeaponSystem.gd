@@ -13,6 +13,9 @@ const HOMING_PACK_COST: float = 12.0
 const LASER_PACK_AMMO: int = 10
 const STUN_PACK_AMMO: int = 5
 const HOMING_PACK_AMMO: int = 3
+const LASER_CAPACITY: int = 40
+const STUN_CAPACITY: int = 20
+const HOMING_CAPACITY: int = 15
 
 var player: Node2D
 var shape: Node
@@ -116,6 +119,17 @@ func get_weapon_pack_ammo(weapon_type: int) -> int:
 
 func get_weapon_ammo(weapon_type: int) -> int:
 	return weapon_ammo.get(weapon_type, 0)
+
+func get_weapon_capacity(weapon_type: int) -> int:
+	match weapon_type:
+		WeaponSlot.WeaponType.LASER:
+			return LASER_CAPACITY
+		WeaponSlot.WeaponType.STUN:
+			return STUN_CAPACITY
+		WeaponSlot.WeaponType.HOMING:
+			return HOMING_CAPACITY
+		_:
+			return 0
 
 func get_weapon_label(weapon_type: int) -> String:
 	match weapon_type:

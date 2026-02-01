@@ -3,9 +3,20 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERBOSE_FLAG=""
-if [[ "${1:-}" == "--verbose" ]]; then
-  VERBOSE_FLAG="--verbose"
-fi
+EXTRA_ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --verbose)
+      VERBOSE_FLAG="--verbose"
+      ;;
+    --hud-shot|--hud-shot-delay=*|--hud-shot-path=*)
+      EXTRA_ARGS+=("$arg")
+      ;;
+    *)
+      EXTRA_ARGS+=("$arg")
+      ;;
+  esac
+done
 
 if [[ -n "${GODOT_BIN:-}" ]]; then
   BIN="$GODOT_BIN"
@@ -20,4 +31,4 @@ else
   exit 1
 fi
 
-exec "$BIN" $VERBOSE_FLAG --path "$ROOT_DIR"
+exec "$BIN" $VERBOSE_FLAG --path "$ROOT_DIR" "${EXTRA_ARGS[@]}"

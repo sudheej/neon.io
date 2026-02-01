@@ -15,12 +15,12 @@ var spawn_timer: float = 0.0
 var elapsed: float = 0.0
 var game_over: bool = false
 var game_over_pulse: float = 0.0
+var pending_hud_shot: bool = false
 
 @onready var player = $Player
 @onready var enemies_root = $Enemies
 @onready var camera = $Camera2D
-@onready var hud_label: Label = $HUD/Info
-@onready var weapon_legend: Label = $HUD/WeaponLegend
+@onready var hud_label: Label = $HUD/InfoPanel/Body/Info
 @onready var game_over_layer: CanvasLayer = $GameOver
 @onready var game_over_time: Label = $GameOver/TimeSurvived
 
@@ -30,6 +30,7 @@ func _ready() -> void:
 	spawn_timer = SPAWN_INTERVAL
 	if player != null and player.has_signal("died"):
 		player.died.connect(_on_player_died)
+	_maybe_schedule_hud_screenshot()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("restart_game"):
@@ -47,7 +48,6 @@ func _process(delta: float) -> void:
 	var combatants: Array[Node] = _get_combatants()
 	_process_combatants(delta, combatants)
 	_update_hud(combatants)
-	_update_weapon_legend()
 	_maybe_spawn_enemy(delta, combatants.size() - 1)
 
 func _get_combatants() -> Array[Node]:
@@ -93,7 +93,7 @@ func _update_hud(combatants: Array[Node]) -> void:
 	if hud_label == null:
 		return
 	var enemy_count = max(combatants.size() - 1, 0)
-	hud_label.text = "Credits: %.1f\nEnemies: %d\n[R] Restart" % [player.xp, enemy_count]
+	hud_label.text = "CREDITS: %.1f\nENEMIES: %d\n[R] RESTART" % [player.xp, enemy_count]
 
 func _current_enemy_cap() -> int:
 	var ramp = int(floor(elapsed / SPAWN_RAMP_SECONDS))
@@ -106,34 +106,6 @@ func _on_player_died(_victim: Node) -> void:
 		game_over_layer.visible = true
 	_update_game_over_time()
 
-func _update_weapon_legend() -> void:
-	if weapon_legend == null:
-		return
-	var weapon_type = player.weapon_system.get_selected_weapon_type()
-	var laser_cost = player.weapon_system.get_weapon_pack_cost(WeaponSlot.WeaponType.LASER)
-	var stun_cost = player.weapon_system.get_weapon_pack_cost(WeaponSlot.WeaponType.STUN)
-	var homing_cost = player.weapon_system.get_weapon_pack_cost(WeaponSlot.WeaponType.HOMING)
-	var laser_ammo = player.weapon_system.get_weapon_ammo(WeaponSlot.WeaponType.LASER)
-	var stun_ammo = player.weapon_system.get_weapon_ammo(WeaponSlot.WeaponType.STUN)
-	var homing_ammo = player.weapon_system.get_weapon_ammo(WeaponSlot.WeaponType.HOMING)
-	var laser_pack = player.weapon_system.get_weapon_pack_ammo(WeaponSlot.WeaponType.LASER)
-	var stun_pack = player.weapon_system.get_weapon_pack_ammo(WeaponSlot.WeaponType.STUN)
-	var homing_pack = player.weapon_system.get_weapon_pack_ammo(WeaponSlot.WeaponType.HOMING)
-	weapon_legend.text = "%s 1 Laser  Ammo:%d  (+%d/%.0f)\n%s 2 Stun   Ammo:%d  (+%d/%.0f)\n%s 3 Homing Ammo:%d  (+%d/%.0f)" % [
-		">" if weapon_type == WeaponSlot.WeaponType.LASER else " ",
-		laser_ammo,
-		laser_pack,
-		laser_cost,
-		">" if weapon_type == WeaponSlot.WeaponType.STUN else " ",
-		stun_ammo,
-		stun_pack,
-		stun_cost,
-		">" if weapon_type == WeaponSlot.WeaponType.HOMING else " ",
-		homing_ammo,
-		homing_pack,
-		homing_cost
-	]
-
 func _update_game_over_time() -> void:
 	if game_over_time == null:
 		return
@@ -144,3 +116,26 @@ func _update_game_over_time() -> void:
 	game_over_time.text = "Time Survived: %02d:%02d:%02d" % [hours, minutes, seconds]
 	var pulse = 0.9 + 0.12 * sin(game_over_pulse * 2.0)
 	game_over_time.modulate = Color(1.0, 1.0, 1.0, pulse)
+
+func _maybe_schedule_hud_screenshot() -> void:
+	var args = OS.get_cmdline_args()
+	if not args.has("--hud-shot"):
+		return
+	if pending_hud_shot:
+		return
+	var delay := 1.2
+	var path := "user://hud_shot.png"
+	for arg in args:
+		if arg.begins_with("--hud-shot-delay="):
+			delay = float(arg.get_slice("=", 1))
+		elif arg.begins_with("--hud-shot-path="):
+			path = arg.get_slice("=", 1)
+	pending_hud_shot = true
+	call_deferred("_do_hud_screenshot", delay, path)
+
+func _do_hud_screenshot(delay: float, path: String) -> void:
+	await get_tree().create_timer(delay).timeout
+	await get_tree().process_frame
+	var image = get_viewport().get_texture().get_image()
+	if image != null:
+		image.save_png(path)
