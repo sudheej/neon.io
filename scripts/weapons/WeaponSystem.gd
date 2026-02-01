@@ -270,7 +270,7 @@ func _fire_at_target(slot: WeaponSlot, origin: Vector2, target: Node2D) -> void:
 	if slot.weapon_type == WeaponSlot.WeaponType.HOMING:
 		var homing = preload("res://scripts/weapons/projectiles/HomingShot.gd").new()
 		homing.global_position = origin
-		homing.setup(origin, target, damage, player)
+		homing.setup(origin, target, damage, player, slot.weapon_type)
 		world.add_child(homing)
 	else:
 		var laser = preload("res://scripts/weapons/projectiles/LaserShot.gd").new()
@@ -291,7 +291,7 @@ func _fire_at_target(slot: WeaponSlot, origin: Vector2, target: Node2D) -> void:
 
 	if slot.weapon_type != WeaponSlot.WeaponType.HOMING:
 		if target.has_method("apply_damage"):
-			target.apply_damage(damage, stun_duration, player)
+			target.apply_damage(damage, stun_duration, player, slot.weapon_type)
 
 func _set_slot_weapon(slot: WeaponSlot, weapon_type: int) -> void:
 	slot.weapon_type = weapon_type

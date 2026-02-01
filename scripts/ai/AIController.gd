@@ -152,4 +152,4 @@ func _difficulty_scale() -> float:
 	if elapsed == null:
 		return 0.5
 	var t = clamp(float(elapsed) / RAMP_TIME, 0.0, 1.0)
-	return lerpf(0.35, 0.9, t)
+	return lerpf(0.25, 0.7, t)

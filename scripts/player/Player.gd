@@ -21,6 +21,9 @@ var max_health: float = 40.0
 var health: float = 40.0
 var stun_time: float = 0.0
 var damage_flash: float = 0.0
+var damage_blink_timer: float = 0.0
+var damage_blink_phase: float = 0.0
+var damage_blink_color: Color = Color(1.0, 0.4, 0.4, 1.0)
 var regen_delay: float = 3.0
 var regen_rate: float = 4.0
 var regen_timer: float = 0.0
@@ -54,6 +57,9 @@ func _process(delta: float) -> void:
 		stun_time = maxf(stun_time - delta, 0.0)
 	if damage_flash > 0.0:
 		damage_flash = maxf(damage_flash - delta, 0.0)
+	if damage_blink_timer > 0.0:
+		damage_blink_timer = maxf(damage_blink_timer - delta, 0.0)
+		damage_blink_phase = fmod(damage_blink_phase + delta * 22.0, TAU)
 
 	for i in range(pulses.size() - 1, -1, -1):
 		pulses[i]["time"] -= delta
@@ -67,7 +73,12 @@ func _physics_process(delta: float) -> void:
 		move_command = ai_move
 	else:
 		_update_commands()
-	var target_vel = move_command.normalized() * MOVE_SPEED
+	var move_dir = move_command
+	if not is_ai:
+		move_dir = move_command.normalized()
+	elif move_dir.length() > 1.0:
+		move_dir = move_dir.normalized()
+	var target_vel = move_dir * MOVE_SPEED
 	if stun_time > 0.0:
 		target_vel *= 0.35
 	velocity = velocity.lerp(target_vel, 1.0 - pow(0.001, delta * ACCEL))
@@ -132,7 +143,7 @@ func set_ai_enabled(enabled: bool) -> void:
 func set_ai_move_command(dir: Vector2) -> void:
 	ai_move = dir
 
-func apply_damage(amount: float, stun_duration: float, source: Node = null) -> void:
+func apply_damage(amount: float, stun_duration: float, source: Node = null, weapon_type: int = -1) -> void:
 	if not is_ai:
 		amount *= HUMAN_DAMAGE_MULTIPLIER
 	health -= amount
@@ -140,6 +151,9 @@ func apply_damage(amount: float, stun_duration: float, source: Node = null) -> v
 	if stun_duration > 0.0:
 		stun_time = maxf(stun_time, stun_duration)
 	damage_flash = 0.25
+	damage_blink_timer = 0.18
+	damage_blink_phase = 0.0
+	damage_blink_color = _get_damage_blink_color(weapon_type)
 	if health <= 0.0:
 		if source != null and source.has_method("add_xp"):
 			source.add_xp(10.0)
@@ -184,18 +198,38 @@ func _draw_cells() -> void:
 	var outline := Color(0.92, 0.96, 1.0, 0.9)
 	var outline_active := Color(0.96, 1.0, 1.0, 1.0)
 	var inner := Color(0.92, 0.96, 1.0, 0.25)
+	var blink_active := damage_blink_timer > 0.0
+	var blink_strength := 0.5 + 0.5 * sin(damage_blink_phase)
+	var blink_outline := Color(damage_blink_color.r, damage_blink_color.g, damage_blink_color.b, 0.95)
+	var blink_inner := Color(damage_blink_color.r, damage_blink_color.g, damage_blink_color.b, 0.35)
 	var armed_cell: Vector2i = weapon_system.get_armed_cell()
 	for grid_pos in shape.cells.keys():
 		var local_pos = shape.grid_to_local(grid_pos)
 		var half = PlayerShapeScript.CELL_SIZE * 0.5
 		var rect = Rect2(local_pos - Vector2.ONE * half, Vector2.ONE * PlayerShapeScript.CELL_SIZE)
 		var border_color := outline_active if grid_pos == armed_cell else outline
+		if blink_active:
+			border_color = border_color.lerp(blink_outline, blink_strength)
 		var border_width := 2.0 if grid_pos == armed_cell else 1.2
 		draw_rect(rect, border_color, false, border_width)
-		draw_line(rect.position + Vector2(half, 0.0), rect.position + Vector2(half, rect.size.y), inner, 1.0)
-		draw_line(rect.position + Vector2(0.0, half), rect.position + Vector2(rect.size.x, half), inner, 1.0)
+		var inner_color := inner
+		if blink_active:
+			inner_color = inner_color.lerp(blink_inner, blink_strength)
+		draw_line(rect.position + Vector2(half, 0.0), rect.position + Vector2(half, rect.size.y), inner_color, 1.0)
+		draw_line(rect.position + Vector2(0.0, half), rect.position + Vector2(rect.size.x, half), inner_color, 1.0)
 
 		_draw_pulse_edges(rect)
+
+func _get_damage_blink_color(weapon_type: int) -> Color:
+	match weapon_type:
+		WeaponSlot.WeaponType.LASER:
+			return Color(0.2, 0.95, 1.0, 1.0)
+		WeaponSlot.WeaponType.STUN:
+			return Color(0.2, 1.0, 0.4, 1.0)
+		WeaponSlot.WeaponType.HOMING:
+			return Color(1.0, 0.6, 0.15, 1.0)
+		_:
+			return Color(1.0, 0.4, 0.4, 1.0)
 
 func _draw_pulse_edges(rect: Rect2) -> void:
 	for pulse in pulses:

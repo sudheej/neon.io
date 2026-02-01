@@ -33,7 +33,7 @@ func _randomize_dir() -> void:
 	wander_dir = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)).normalized()
 	wander_time = randf_range(1.0, 2.2)
 
-func apply_damage(amount: float, stun_duration: float) -> void:
+func apply_damage(amount: float, stun_duration: float, _source: Node = null, _weapon_type: int = -1) -> void:
 	health -= amount
 	if stun_duration > 0.0:
 		stun_time = maxf(stun_time, stun_duration)
