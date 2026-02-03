@@ -6,6 +6,7 @@ Quick run:
 - `./run_game.sh` (uses `~/Downloads/Godot_v4.5.1-stable_linux.x86_64` or `GODOT_BIN`).
 - When suggesting playtests, run `./run_game.sh` first and check the console for errors before recommending the user play.
 - `./run_game.sh --verbose` is supported for troubleshooting.
+- Always run `./run_game.sh` and confirm stdout has no errors before presenting any next steps.
 
 Core scenes:
 - `scenes/Main.tscn` -> `scenes/World.tscn`

@@ -10,6 +10,8 @@ const MOVE_SPEED: float = 180.0
 const ACCEL: float = 12.0
 const EXPAND_COST: float = 6.0
 const HUMAN_DAMAGE_MULTIPLIER: float = 0.6
+const SPAWN_DURATION: float = 0.35
+const DEATH_DURATION: float = 0.45
 var velocity: Vector2 = Vector2.ZERO
 var xp: float = 300.0
 var expand_mode: bool = false
@@ -34,6 +36,9 @@ var place_command: Vector2i = Vector2i(99999, 99999)
 
 var pulse_timer: float = 0.0
 var pulses: Array[Dictionary] = []
+var spawn_timer: float = 0.0
+var death_timer: float = 0.0
+var is_dying: bool = false
 
 @onready var shape = $PlayerShape
 @onready var weapon_system = $WeaponSystem
@@ -42,8 +47,20 @@ func _ready() -> void:
 	add_to_group("combatants")
 	if not is_ai:
 		add_to_group("player")
+	spawn_timer = SPAWN_DURATION
+	modulate.a = 0.0
 
 func _process(delta: float) -> void:
+	if is_dying:
+		_update_death_fx(delta)
+		queue_redraw()
+		return
+	if spawn_timer > 0.0:
+		spawn_timer = maxf(spawn_timer - delta, 0.0)
+		var t := _get_spawn_t()
+		modulate.a = t
+	else:
+		modulate.a = 1.0
 	if regen_timer > 0.0:
 		regen_timer = maxf(regen_timer - delta, 0.0)
 	elif health < max_health:
@@ -69,6 +86,8 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _physics_process(delta: float) -> void:
+	if is_dying:
+		return
 	if is_ai:
 		move_command = ai_move
 	else:
@@ -86,6 +105,8 @@ func _physics_process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if is_ai:
+		return
+	if is_dying:
 		return
 	if event.is_action_pressed("expand_mode"):
 		expand_mode = !expand_mode
@@ -154,11 +175,11 @@ func apply_damage(amount: float, stun_duration: float, source: Node = null, weap
 	damage_blink_timer = 0.18
 	damage_blink_phase = 0.0
 	damage_blink_color = _get_damage_blink_color(weapon_type)
-	if health <= 0.0:
+	if health <= 0.0 and not is_dying:
 		if source != null and source.has_method("add_xp"):
 			source.add_xp(10.0)
 		emit_signal("died", self)
-		queue_free()
+		_start_death()
 
 func local_to_grid(v: Vector2) -> Vector2i:
 	return shape.local_to_grid(v)
@@ -189,6 +210,8 @@ func _get_valid_expand_cells() -> Array[Vector2i]:
 	return valid
 
 func _draw() -> void:
+	_draw_death_fx()
+	_draw_spawn_fx()
 	_draw_cells()
 	if expand_mode:
 		_draw_expand_ghosts()
@@ -320,3 +343,55 @@ func _spawn_pulse() -> void:
 	var grid_pos = keys[randi() % keys.size()]
 	var dirs = ["N", "E", "S", "W"]
 	pulses.append({"grid_pos": grid_pos, "dir": dirs[randi() % dirs.size()], "time": 0.2, "life": 0.2})
+
+func _get_spawn_t() -> float:
+	if SPAWN_DURATION <= 0.0:
+		return 1.0
+	var raw := 1.0 - (spawn_timer / SPAWN_DURATION)
+	var clamped := clampf(raw, 0.0, 1.0)
+	return clamped * clamped * (3.0 - 2.0 * clamped)
+
+func _draw_spawn_fx() -> void:
+	if spawn_timer <= 0.0:
+		return
+	var t := _get_spawn_t()
+	var expand := lerpf(1.6, 1.0, t)
+	var glow := Color(0.6, 0.9, 1.0, 0.5 * (1.0 - t))
+	for grid_pos: Vector2i in shape.cells.keys():
+		var local_pos: Vector2 = shape.grid_to_local(grid_pos)
+		var half := PlayerShapeScript.CELL_SIZE * 0.5 * expand
+		var rect := Rect2(local_pos - Vector2.ONE * half, Vector2.ONE * PlayerShapeScript.CELL_SIZE * expand)
+		draw_rect(rect, glow, false, 2.0)
+
+func _start_death() -> void:
+	is_dying = true
+	death_timer = DEATH_DURATION
+
+func _update_death_fx(delta: float) -> void:
+	if death_timer <= 0.0:
+		queue_free()
+		return
+	death_timer = maxf(death_timer - delta, 0.0)
+	var t := _get_death_t()
+	modulate.a = t
+	scale = Vector2.ONE * lerpf(1.0, 0.4, 1.0 - t)
+	if death_timer <= 0.0:
+		queue_free()
+
+func _get_death_t() -> float:
+	if DEATH_DURATION <= 0.0:
+		return 0.0
+	var raw := death_timer / DEATH_DURATION
+	return clampf(raw, 0.0, 1.0)
+
+func _draw_death_fx() -> void:
+	if not is_dying:
+		return
+	var t := _get_death_t()
+	var flash := Color(1.0, 0.7, 0.3, 0.9 * (1.0 - t))
+	var expand := lerpf(1.0, 1.8, 1.0 - t)
+	for grid_pos: Vector2i in shape.cells.keys():
+		var local_pos: Vector2 = shape.grid_to_local(grid_pos)
+		var half := PlayerShapeScript.CELL_SIZE * 0.5 * expand
+		var rect := Rect2(local_pos - Vector2.ONE * half, Vector2.ONE * PlayerShapeScript.CELL_SIZE * expand)
+		draw_rect(rect, flash, false, 2.2)
