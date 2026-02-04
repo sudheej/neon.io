@@ -1,8 +1,28 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/world/World.gd" id="1"]
 [ext_resource type="Script" path="res://scripts/world/BlueprintGrid.gd" id="2"]
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="3"]
+[ext_resource type="Script" path="res://scripts/ui/WeaponHud.gd" id="4"]
+
+[sub_resource type="StyleBoxFlat" id="1"]
+content_margin_left = 12.0
+content_margin_top = 10.0
+content_margin_right = 12.0
+content_margin_bottom = 10.0
+bg_color = Color(0.04, 0.06, 0.08, 0.82)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.2, 0.9, 1, 0.75)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+shadow_size = 8
+shadow_offset = Vector2(0, 0)
+shadow_color = Color(0, 1, 1, 0.2)
 
 [node name="World" type="Node2D"]
 script = ExtResource("1")
@@ -15,17 +35,90 @@ script = ExtResource("2")
 [node name="HUD" type="CanvasLayer" parent="."]
 layer = 10
 
-[node name="Info" type="Label" parent="HUD"]
+[node name="InfoPanel" type="PanelContainer" parent="HUD"]
 anchor_left = 1.0
 anchor_top = 0.0
 anchor_right = 1.0
 anchor_bottom = 0.0
-offset_left = -220.0
-offset_top = 16.0
-offset_right = -16.0
-offset_bottom = 120.0
+offset_left = -190.0
+offset_top = 10.0
+offset_right = -12.0
+offset_bottom = 72.0
+theme_override_styles/panel = SubResource("1")
+
+[node name="Body" type="VBoxContainer" parent="HUD/InfoPanel"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+[node name="Title" type="Label" parent="HUD/InfoPanel/Body"]
 horizontal_alignment = 2
-text = "XP: 0.0\nEnemies: 0\n[R] Restart"
+text = "SYSTEM STATUS"
+theme_override_colors/font_color = Color(0.6, 0.95, 1, 0.9)
+theme_override_font_sizes/font_size = 10
+
+[node name="Accent" type="ColorRect" parent="HUD/InfoPanel/Body"]
+custom_minimum_size = Vector2(0, 2)
+size_flags_horizontal = 3
+color = Color(0.2, 0.9, 1, 0.7)
+
+[node name="Info" type="Label" parent="HUD/InfoPanel/Body"]
+horizontal_alignment = 2
+text = "CREDITS: 0.0\nENEMIES: 0\n[R] RESTART"
+theme_override_colors/font_color = Color(0.9, 0.96, 1, 0.9)
+theme_override_font_sizes/font_size = 12
+
+[node name="WeaponHUD" type="Control" parent="HUD"]
+anchor_left = 1.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 0.0
+offset_left = -300.0
+offset_top = 162.0
+offset_right = -12.0
+offset_bottom = 340.0
+script = ExtResource("4")
+
+[node name="GameOver" type="CanvasLayer" parent="."]
+layer = 20
+visible = false
+
+[node name="Overlay" type="ColorRect" parent="GameOver"]
+anchor_left = 0.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 0.0
+color = Color(0, 0, 0, 0.6)
+
+[node name="Label" type="Label" parent="GameOver"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -140.0
+offset_top = -30.0
+offset_right = 140.0
+offset_bottom = 30.0
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "GAME OVER\nPress R to restart"
+
+[node name="TimeSurvived" type="Label" parent="GameOver"]
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -140.0
+offset_top = 18.0
+offset_right = 140.0
+offset_bottom = 46.0
+horizontal_alignment = 1
+vertical_alignment = 1
+text = "Time Survived: 00:00:00"
 
 [node name="Enemies" type="Node2D" parent="."]
 

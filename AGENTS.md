@@ -1,0 +1,55 @@
+# AGENTS.md
+
+Project: Godot 4.5.1 game prototype in `/home/xtechkid/Work/neon.io`.
+
+Quick run:
+- `./run_game.sh` (uses `~/Downloads/Godot_v4.5.1-stable_linux.x86_64` or `GODOT_BIN`).
+- When suggesting playtests, run `./run_game.sh` first and check the console for errors before recommending the user play.
+- `./run_game.sh --verbose` is supported for troubleshooting.
+- Always run `./run_game.sh` and confirm stdout has no errors before presenting any next steps.
+
+Core scenes:
+- `scenes/Main.tscn` -> `scenes/World.tscn`
+- `scenes/Player.tscn` is used for both human and AI.
+
+Controls:
+- WASD / arrows: move
+- E: expand mode, LMB place
+- Tab: next slot, `[` (left bracket) previous slot
+- Q: toggle range ring
+- 1/2/3: buy ammo pack + select weapon (Laser/Stun/Homing)
+- R: restart
+
+Gameplay systems:
+- Weapons: `scripts/weapons/WeaponSystem.gd`
+  - ammo per weapon, auto‑reload from credits when empty (auto_reload=true)
+  - ammo packs: Laser (+10/4 credits), Stun (+5/8), Homing (+3/12)
+  - homing capped to one active missile at a time
+  - stun shots are green (custom beam/core color passed to `LaserShot`)
+- Projectiles:
+  - `scripts/weapons/projectiles/LaserShot.gd` uses shader glow; tracks origin/target
+    - plays randomized theremin laser SFX, distance‑attenuated; AudioStreamPlayer2D is parented to world to avoid being freed early
+    - loads audio via `.import` remap (uses `res://.godot/imported/*.oggvorbisstr`) because this Godot binary does not load raw `.wav`/`.ogg`
+  - `scripts/weapons/projectiles/HomingShot.gd` accelerates over 4s, applies damage on hit, orange glow + trail, self‑destructs
+- Player health and AI:
+  - `scripts/player/Player.gd` has health, stun, damage flash, `died` signal; AI uses same scene
+    - human player takes reduced damage (`HUMAN_DAMAGE_MULTIPLIER`) so health drops slower than AI
+    - health regen after no damage (`regen_delay`, `regen_rate`)
+  - `scripts/ui/HealthBar.gd` draws always‑visible bar with delayed drain
+    - drain lerp is slower for the human player
+  - `scripts/ai/AIController.gd` handles movement/targeting/dodging; AI profiles (laser/stun/homing/balanced), difficulty ramp (movement scale)
+    - AI movement starts slower and ramps more gradually (RAMP_TIME 120s, scale 0.35→0.9)
+- World:
+  - `scripts/world/World.gd` spawns AI players, ramps max AI count over time, free‑for‑all combatants
+  - Game over overlay in `scenes/World.tscn` when human dies; press R to restart
+  - Game over shows Time Survived in hh:mm:ss with pulsing animation (`GameOver/TimeSurvived`)
+
+Rendering:
+- 2D MSAA enabled in `project.godot` (`anti_aliasing/quality/msaa_2d=3`)
+- Laser glow shader: `scripts/weapons/projectiles/LaserGlow.gdshader`
+
+Notes:
+- AI targets are combatants (group `combatants`) not just player.
+- Human player is in group `player`; AI sets `is_ai=true` and removes itself from `player` group.
+- This Godot binary reports AudioStream extensions: `tres`, `res`, `sample`, `oggvorbisstr`, `mp3str`; raw `.wav`/`.ogg` do not load without import.
+- Arrow keys use Godot 4 keycodes in `project.godot` (UP 4194320, DOWN 4194322, LEFT 4194319, RIGHT 4194321).
