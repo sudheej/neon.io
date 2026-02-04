@@ -12,6 +12,8 @@ const EXPAND_COST: float = 6.0
 const HUMAN_DAMAGE_MULTIPLIER: float = 0.6
 const SPAWN_DURATION: float = 0.35
 const DEATH_DURATION: float = 0.45
+const COLLISION_PUSH_SCALE: float = 0.5
+const COLLISION_PULSE_LIFE: float = 0.18
 var velocity: Vector2 = Vector2.ZERO
 var xp: float = 300.0
 var expand_mode: bool = false
@@ -36,6 +38,7 @@ var place_command: Vector2i = Vector2i(99999, 99999)
 
 var pulse_timer: float = 0.0
 var pulses: Array[Dictionary] = []
+var repel_pulses: Array[Dictionary] = []
 var spawn_timer: float = 0.0
 var death_timer: float = 0.0
 var is_dying: bool = false
@@ -82,6 +85,10 @@ func _process(delta: float) -> void:
 		pulses[i]["time"] -= delta
 		if pulses[i]["time"] <= 0.0:
 			pulses.remove_at(i)
+	for i in range(repel_pulses.size() - 1, -1, -1):
+		repel_pulses[i]["time"] -= delta
+		if repel_pulses[i]["time"] <= 0.0:
+			repel_pulses.remove_at(i)
 
 	queue_redraw()
 
@@ -102,6 +109,7 @@ func _physics_process(delta: float) -> void:
 		target_vel *= 0.35
 	velocity = velocity.lerp(target_vel, 1.0 - pow(0.001, delta * ACCEL))
 	global_position += velocity * delta
+	_apply_soft_collisions(delta)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if is_ai:
@@ -131,6 +139,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		queue_redraw()
 	if event.is_action_pressed("weapon_homing"):
 		weapon_system.select_weapon_and_buy(WeaponSlot.WeaponType.HOMING)
+		queue_redraw()
+	if event.is_action_pressed("weapon_spread"):
+		weapon_system.select_weapon_and_buy(WeaponSlot.WeaponType.SPREAD)
 		queue_redraw()
 
 	if expand_mode and event.is_action_pressed("expand_place"):
@@ -213,6 +224,7 @@ func _draw() -> void:
 	_draw_death_fx()
 	_draw_spawn_fx()
 	_draw_cells()
+	_draw_repel_pulses()
 	if expand_mode:
 		_draw_expand_ghosts()
 	_draw_selected_slot_range()
@@ -251,6 +263,8 @@ func _get_damage_blink_color(weapon_type: int) -> Color:
 			return Color(0.2, 1.0, 0.4, 1.0)
 		WeaponSlot.WeaponType.HOMING:
 			return Color(1.0, 0.6, 0.15, 1.0)
+		WeaponSlot.WeaponType.SPREAD:
+			return Color(0.75, 0.4, 1.0, 1.0)
 		_:
 			return Color(1.0, 0.4, 0.4, 1.0)
 
@@ -273,6 +287,15 @@ func _draw_pulse_edges(rect: Rect2) -> void:
 				draw_line(p4, p3, color, 2.0)
 			"W":
 				draw_line(p1, p4, color, 2.0)
+
+func _draw_repel_pulses() -> void:
+	for pulse in repel_pulses:
+		var t = pulse["time"] / pulse["life"]
+		var radius = lerpf(6.0, 16.0, 1.0 - t)
+		var alpha = 0.5 * t
+		var color = Color(0.6, 0.9, 1.0, alpha)
+		var local_pos = to_local(pulse["pos"])
+		draw_arc(local_pos, radius, 0.0, TAU, 48, color, 1.2)
 
 func _draw_expand_ghosts() -> void:
 	var color := Color(0.4, 0.9, 1.0, 0.35)
@@ -343,6 +366,52 @@ func _spawn_pulse() -> void:
 	var grid_pos = keys[randi() % keys.size()]
 	var dirs = ["N", "E", "S", "W"]
 	pulses.append({"grid_pos": grid_pos, "dir": dirs[randi() % dirs.size()], "time": 0.2, "life": 0.2})
+
+func _apply_soft_collisions(_delta: float) -> void:
+	var others = get_tree().get_nodes_in_group("combatants")
+	var my_radius = _get_collision_radius()
+	for other in others:
+		var node = other as Node2D
+		if node == null or node == self:
+			continue
+		if not node.has_method("get_collision_radius"):
+			continue
+		var other_radius = node.get_collision_radius()
+		var to_me = global_position - node.global_position
+		var dist = to_me.length()
+		if dist < 0.001:
+			continue
+		var min_dist = my_radius + other_radius
+		if dist >= min_dist:
+			continue
+		var dir = to_me / dist
+		var push = (min_dist - dist) * COLLISION_PUSH_SCALE
+		global_position += dir * push
+		if push > 0.35:
+			_spawn_repel_pulse(global_position - dir * my_radius)
+
+func get_collision_radius() -> float:
+	return _get_collision_radius()
+
+func _get_collision_radius() -> float:
+	if shape == null or shape.cells.is_empty():
+		return PlayerShapeScript.CELL_SIZE * 0.5
+	var max_dist := 0.0
+	for grid_pos in shape.cells.keys():
+		var local_pos = shape.grid_to_local(grid_pos)
+		var dist = local_pos.length() + PlayerShapeScript.CELL_SIZE * 0.5
+		if dist > max_dist:
+			max_dist = dist
+	return max_dist
+
+func _spawn_repel_pulse(world_pos: Vector2) -> void:
+	if repel_pulses.size() > 10:
+		repel_pulses.pop_front()
+	repel_pulses.append({
+		"pos": world_pos,
+		"time": COLLISION_PULSE_LIFE,
+		"life": COLLISION_PULSE_LIFE
+	})
 
 func _get_spawn_t() -> float:
 	if SPAWN_DURATION <= 0.0:

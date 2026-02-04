@@ -22,6 +22,11 @@ var target_node: Node2D = null
 var origin_offset: Vector2 = Vector2.ZERO
 var beam_color: Color = Color(0.4, 1.0, 1.0, 0.6)
 var core_color: Color = Color(0.8, 1.0, 1.0, 0.9)
+var beam_width: float = 3.0
+var core_width: float = 1.0
+var flicker_strength: float = 0.0
+var jitter_strength: float = 0.0
+var flicker_phase: float = 0.0
 var rng := RandomNumberGenerator.new()
 static var sfx_cache: Array[AudioStream] = []
 static var sfx_checked := false
@@ -49,7 +54,11 @@ func setup(
 	p_origin_offset: Vector2 = Vector2.ZERO,
 	p_target_node: Node2D = null,
 	p_beam_color: Color = Color(0.4, 1.0, 1.0, 0.6),
-	p_core_color: Color = Color(0.8, 1.0, 1.0, 0.9)
+	p_core_color: Color = Color(0.8, 1.0, 1.0, 0.9),
+	p_beam_width: float = 3.0,
+	p_core_width: float = 1.0,
+	p_flicker_strength: float = 0.0,
+	p_jitter_strength: float = 0.0
 ) -> void:
 	start_pos = p_start
 	end_pos = p_end
@@ -58,6 +67,10 @@ func setup(
 	target_node = p_target_node
 	beam_color = p_beam_color
 	core_color = p_core_color
+	beam_width = p_beam_width
+	core_width = p_core_width
+	flicker_strength = p_flicker_strength
+	jitter_strength = p_jitter_strength
 	global_position = start_pos
 	queue_redraw()
 
@@ -78,11 +91,23 @@ func _draw() -> void:
 		return
 	var t := time_left / LIFE
 	var color := beam_color
-	color.a *= t
+	var flicker := 1.0
+	if flicker_strength > 0.0:
+		flicker = 1.0 + sin(time_left * 38.0 + flicker_phase) * flicker_strength
+	color.a *= t * flicker
 	var core := core_color
-	core.a *= t
-	draw_line(Vector2.ZERO, to_local(end_pos), color, 3.0)
-	draw_line(Vector2.ZERO, to_local(end_pos), core, 1.0)
+	core.a *= t * flicker
+	var to_end := to_local(end_pos)
+	var normal := Vector2.ZERO
+	if jitter_strength > 0.0:
+		var dir = to_end.normalized()
+		if dir.length() > 0.0:
+			normal = Vector2(-dir.y, dir.x) * (sin(time_left * 32.0 + flicker_phase) * jitter_strength)
+	draw_line(Vector2.ZERO, to_end, color, beam_width * flicker)
+	draw_line(Vector2.ZERO, to_end, core, core_width * flicker)
+	if jitter_strength > 0.0:
+		var ghost_color = Color(color.r, color.g, color.b, color.a * 0.55)
+		draw_line(normal, to_end + normal, ghost_color, max(0.6, beam_width * 0.6))
 
 func _play_laser_sfx() -> void:
 	if laser_sfx.is_empty():
@@ -101,6 +126,9 @@ func _play_laser_sfx() -> void:
 		get_tree().current_scene.add_child(player)
 	player.play()
 	player.finished.connect(player.queue_free)
+
+func _init() -> void:
+	flicker_phase = randf_range(0.0, TAU)
 
 func _load_imported_audio(source_path: String) -> AudioStream:
 	var import_path := source_path + ".import"

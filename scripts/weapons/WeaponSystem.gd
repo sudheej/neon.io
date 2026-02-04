@@ -7,15 +7,23 @@ const PlayerShapeScript = preload("res://scripts/player/PlayerShape.gd")
 const FIRE_COOLDOWN: float = 0.35
 const STUN_COST: float = 0.0
 const HOMING_COST: float = 0.0
+const SPREAD_COST: float = 0.0
 const LASER_PACK_COST: float = 4.0
 const STUN_PACK_COST: float = 8.0
 const HOMING_PACK_COST: float = 12.0
+const SPREAD_PACK_COST: float = 6.0
 const LASER_PACK_AMMO: int = 10
 const STUN_PACK_AMMO: int = 5
 const HOMING_PACK_AMMO: int = 3
+const SPREAD_PACK_AMMO: int = 6
 const LASER_CAPACITY: int = 40
 const STUN_CAPACITY: int = 20
 const HOMING_CAPACITY: int = 15
+const SPREAD_CAPACITY: int = 24
+const LASER_DAMAGE: float = 4.0
+const SPREAD_PRIMARY_MULT: float = 0.75
+const SPREAD_SECONDARY_MULT: float = 0.5
+const SPREAD_RADIUS: float = 140.0
 
 var player: Node2D
 var shape: Node
@@ -29,17 +37,20 @@ var has_armed_cell: bool = false
 var weapon_costs: Dictionary = {
 	WeaponSlot.WeaponType.LASER: 0.0,
 	WeaponSlot.WeaponType.STUN: STUN_COST,
-	WeaponSlot.WeaponType.HOMING: HOMING_COST
+	WeaponSlot.WeaponType.HOMING: HOMING_COST,
+	WeaponSlot.WeaponType.SPREAD: SPREAD_COST
 }
 var weapon_cooldowns: Dictionary = {
 	WeaponSlot.WeaponType.LASER: 0.55,
 	WeaponSlot.WeaponType.STUN: 0.42,
-	WeaponSlot.WeaponType.HOMING: 0.3
+	WeaponSlot.WeaponType.HOMING: 0.3,
+	WeaponSlot.WeaponType.SPREAD: 0.65
 }
 var weapon_ammo: Dictionary = {
 	WeaponSlot.WeaponType.LASER: 20,
 	WeaponSlot.WeaponType.STUN: 0,
-	WeaponSlot.WeaponType.HOMING: 15
+	WeaponSlot.WeaponType.HOMING: 15,
+	WeaponSlot.WeaponType.SPREAD: 0
 }
 var auto_reload: bool = true
 var preferred_target: Node2D = null
@@ -103,6 +114,8 @@ func get_weapon_pack_cost(weapon_type: int) -> float:
 			return STUN_PACK_COST
 		WeaponSlot.WeaponType.HOMING:
 			return HOMING_PACK_COST
+		WeaponSlot.WeaponType.SPREAD:
+			return SPREAD_PACK_COST
 		_:
 			return 0.0
 
@@ -114,6 +127,8 @@ func get_weapon_pack_ammo(weapon_type: int) -> int:
 			return STUN_PACK_AMMO
 		WeaponSlot.WeaponType.HOMING:
 			return HOMING_PACK_AMMO
+		WeaponSlot.WeaponType.SPREAD:
+			return SPREAD_PACK_AMMO
 		_:
 			return 0
 
@@ -128,6 +143,8 @@ func get_weapon_capacity(weapon_type: int) -> int:
 			return STUN_CAPACITY
 		WeaponSlot.WeaponType.HOMING:
 			return HOMING_CAPACITY
+		WeaponSlot.WeaponType.SPREAD:
+			return SPREAD_CAPACITY
 		_:
 			return 0
 
@@ -139,6 +156,8 @@ func get_weapon_label(weapon_type: int) -> String:
 			return "Stun"
 		WeaponSlot.WeaponType.HOMING:
 			return "Homing"
+		WeaponSlot.WeaponType.SPREAD:
+			return "Spread"
 		_:
 			return "Unknown"
 
@@ -222,7 +241,7 @@ func process_weapons(delta: float, enemies: Array[Node]) -> void:
 	if target == null:
 		return
 
-	_fire_at_target(slot, origin, target)
+	_fire_at_target(slot, origin, target, enemies)
 	_consume_ammo(weapon_type, 1)
 	slot_cooldowns[slot] = weapon_cooldowns.get(weapon_type, FIRE_COOLDOWN)
 
@@ -253,19 +272,21 @@ func _find_target_in_range(origin: Vector2, max_range: float, enemies: Array[Nod
 func set_preferred_target(target: Node2D) -> void:
 	preferred_target = target
 
-func _fire_at_target(slot: WeaponSlot, origin: Vector2, target: Node2D) -> void:
+func _fire_at_target(slot: WeaponSlot, origin: Vector2, target: Node2D, enemies: Array[Node]) -> void:
 	var world = get_tree().get_first_node_in_group("world") as Node
 	if world == null:
 		return
 
 	var local_pos = shape.grid_to_local(slot.grid_pos)
-	var damage = 4.0
+	var damage = LASER_DAMAGE
 	var stun_duration = 0.0
 	if slot.weapon_type == WeaponSlot.WeaponType.STUN:
 		stun_duration = 0.65
 		damage = 3.0
 	elif slot.weapon_type == WeaponSlot.WeaponType.HOMING:
 		damage = 7.0
+	elif slot.weapon_type == WeaponSlot.WeaponType.SPREAD:
+		damage = LASER_DAMAGE * SPREAD_PRIMARY_MULT
 
 	if slot.weapon_type == WeaponSlot.WeaponType.HOMING:
 		var homing = preload("res://scripts/weapons/projectiles/HomingShot.gd").new()
@@ -285,13 +306,66 @@ func _fire_at_target(slot: WeaponSlot, origin: Vector2, target: Node2D) -> void:
 				Color(0.2, 1.0, 0.4, 0.6),
 				Color(0.6, 1.0, 0.7, 0.9)
 			)
+		elif slot.weapon_type == WeaponSlot.WeaponType.SPREAD:
+			laser.setup(
+				origin,
+				target.global_position,
+				player,
+				local_pos,
+				target,
+				Color(0.75, 0.4, 1.0, 0.6),
+				Color(0.9, 0.65, 1.0, 0.9),
+				3.0,
+				1.2,
+				0.25,
+				0.8
+			)
 		else:
 			laser.setup(origin, target.global_position, player, local_pos, target)
 		world.add_child(laser)
 
+	if slot.weapon_type == WeaponSlot.WeaponType.SPREAD:
+		_spawn_spread_bursts(world, target.global_position, target, enemies)
+
 	if slot.weapon_type != WeaponSlot.WeaponType.HOMING:
 		if target.has_method("apply_damage"):
 			target.apply_damage(damage, stun_duration, player, slot.weapon_type)
+
+func _spawn_spread_bursts(world: Node, impact_pos: Vector2, primary_target: Node2D, enemies: Array[Node]) -> void:
+	var secondary_damage = LASER_DAMAGE * SPREAD_SECONDARY_MULT
+	var targets = _find_spread_targets(impact_pos, SPREAD_RADIUS, enemies, primary_target)
+	if targets.is_empty():
+		return
+	for target in targets:
+		var beam = preload("res://scripts/weapons/projectiles/LaserShot.gd").new()
+		beam.global_position = Vector2.ZERO
+		beam.setup(
+			impact_pos,
+			target.global_position,
+			null,
+			Vector2.ZERO,
+			target,
+			Color(0.7, 0.35, 1.0, 0.5),
+			Color(0.85, 0.55, 1.0, 0.8),
+			1.6,
+			0.7,
+			0.35,
+			1.2
+		)
+		world.add_child(beam)
+		if target.has_method("apply_damage"):
+			target.apply_damage(secondary_damage, 0.0, player, WeaponSlot.WeaponType.SPREAD)
+
+func _find_spread_targets(origin: Vector2, max_range: float, enemies: Array[Node], primary_target: Node2D) -> Array[Node2D]:
+	var targets: Array[Node2D] = []
+	for enemy in enemies:
+		var node = enemy as Node2D
+		if node == null or node == primary_target:
+			continue
+		var dist = origin.distance_to(node.global_position)
+		if dist <= max_range:
+			targets.append(node)
+	return targets
 
 func _set_slot_weapon(slot: WeaponSlot, weapon_type: int) -> void:
 	slot.weapon_type = weapon_type

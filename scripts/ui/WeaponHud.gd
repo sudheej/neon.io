@@ -5,17 +5,20 @@ const WeaponSlot = preload("res://scripts/weapons/WeaponSlot.gd")
 const WEAPON_ORDER := [
 	WeaponSlot.WeaponType.LASER,
 	WeaponSlot.WeaponType.STUN,
-	WeaponSlot.WeaponType.HOMING
+	WeaponSlot.WeaponType.HOMING,
+	WeaponSlot.WeaponType.SPREAD
 ]
 const WEAPON_KEYS := {
 	WeaponSlot.WeaponType.LASER: "1",
 	WeaponSlot.WeaponType.STUN: "2",
-	WeaponSlot.WeaponType.HOMING: "3"
+	WeaponSlot.WeaponType.HOMING: "3",
+	WeaponSlot.WeaponType.SPREAD: "4"
 }
 const WEAPON_NAMES := {
 	WeaponSlot.WeaponType.LASER: "LASER",
 	WeaponSlot.WeaponType.STUN: "STUN",
-	WeaponSlot.WeaponType.HOMING: "HOMING"
+	WeaponSlot.WeaponType.HOMING: "HOMING",
+	WeaponSlot.WeaponType.SPREAD: "SPREAD"
 }
 
 const PADDING := Vector2(12.0, 10.0)

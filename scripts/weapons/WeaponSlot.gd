@@ -1,7 +1,7 @@
 extends RefCounted
 class_name WeaponSlot
 
-enum WeaponType { LASER, STUN, HOMING }
+enum WeaponType { LASER, STUN, HOMING, SPREAD }
 
 var grid_pos: Vector2i
 var dir: Vector2i

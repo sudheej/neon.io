@@ -14,13 +14,13 @@ var current_target: Node2D = null
 var target_timer: float = 0.0
 var profile: int = 0
 
-enum AIProfile { BALANCED, LASER, STUNNER, HOMING }
+enum AIProfile { BALANCED, LASER, STUNNER, HOMING, SPREADER }
 
 func _ready() -> void:
 	player = get_parent() as Node2D
 	if player != null and player.has_method("set_ai_enabled"):
 		player.set_ai_enabled(true)
-	profile = randi() % 4
+	profile = randi() % 5
 
 func _process(delta: float) -> void:
 	if player == null or not is_instance_valid(player):
@@ -122,10 +122,17 @@ func _maybe_pick_weapon(owner: Node2D, targets: Array, _delta: float) -> void:
 				weapon_type = WeaponSlot.WeaponType.HOMING
 			else:
 				weapon_type = WeaponSlot.WeaponType.LASER
+		AIProfile.SPREADER:
+			if best_dist < 220.0:
+				weapon_type = WeaponSlot.WeaponType.SPREAD
+			else:
+				weapon_type = WeaponSlot.WeaponType.LASER
 		_:
 			if best_dist < 140.0:
 				weapon_type = WeaponSlot.WeaponType.STUN
-			elif best_dist < 260.0:
+			elif best_dist < 230.0:
+				weapon_type = WeaponSlot.WeaponType.SPREAD
+			elif best_dist < 300.0:
 				weapon_type = WeaponSlot.WeaponType.HOMING
 			else:
 				weapon_type = WeaponSlot.WeaponType.LASER
