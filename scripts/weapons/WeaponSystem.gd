@@ -59,6 +59,8 @@ func _ready() -> void:
 	player = get_parent() as Node2D
 	shape = player.get_node_or_null("PlayerShape")
 	_rebuild_slots()
+	_auto_buy_starting_pack(WeaponSlot.WeaponType.STUN)
+	_auto_buy_starting_pack(WeaponSlot.WeaponType.SPREAD)
 
 func _rebuild_slots() -> void:
 	slots.clear()
@@ -392,6 +394,11 @@ func _try_auto_reload(weapon_type: int) -> bool:
 		return false
 	weapon_ammo[weapon_type] = get_weapon_ammo(weapon_type) + pack_amount
 	return true
+
+func _auto_buy_starting_pack(weapon_type: int) -> void:
+	if get_weapon_ammo(weapon_type) > 0:
+		return
+	_try_auto_reload(weapon_type)
 
 func _set_default_armed_cell() -> void:
 	if shape == null:
