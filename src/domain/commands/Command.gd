@@ -5,6 +5,8 @@ enum Type {
 	MOVE,
 	TOGGLE_EXPAND,
 	PLACE_CELL,
+	SET_EXPAND_HOLD,
+	EXPAND_DIRECTION,
 	SELECT_WEAPON,
 	SELECT_NEXT_SLOT,
 	SELECT_PREV_SLOT,
@@ -34,6 +36,20 @@ static func place_cell(actor: String, grid_pos: Vector2i) -> GameCommand:
 	cmd.type = Type.PLACE_CELL
 	cmd.actor_id = actor
 	cmd.payload = {"grid_pos": grid_pos}
+	return cmd
+
+static func set_expand_hold(actor: String, enabled: bool) -> GameCommand:
+	var cmd = (load("res://src/domain/commands/Command.gd") as Script).new()
+	cmd.type = Type.SET_EXPAND_HOLD
+	cmd.actor_id = actor
+	cmd.payload = {"enabled": enabled}
+	return cmd
+
+static func expand_direction(actor: String, dir: Vector2i) -> GameCommand:
+	var cmd = (load("res://src/domain/commands/Command.gd") as Script).new()
+	cmd.type = Type.EXPAND_DIRECTION
+	cmd.actor_id = actor
+	cmd.payload = {"dir": dir}
 	return cmd
 
 static func select_weapon(actor: String, weapon_type: int) -> GameCommand:

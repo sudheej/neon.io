@@ -7,6 +7,7 @@ const WeaponSlot = preload("res://src/domain/weapons/WeaponSlot.gd")
 @export var actor_path: NodePath
 
 var _actor: Node = null
+var _expand_hold: bool = false
 
 func _ready() -> void:
 	super._ready()
@@ -19,13 +20,16 @@ func _process(_delta: float) -> void:
 		_resolve_actor()
 
 func _physics_process(_delta: float) -> void:
+	_update_expand_hold()
+	if _expand_hold:
+		_emit_expand_direction()
 	var move = _get_move_vector()
+	if _expand_hold:
+		move = Vector2.ZERO
 	if move.length() > 0.0 or _actor != null:
 		emit_command(GameCommand.move(actor_id, move))
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("expand_mode"):
-		emit_command(GameCommand.toggle_expand(actor_id))
 	if event.is_action_pressed("select_next_slot"):
 		emit_command(GameCommand.select_next_slot(actor_id))
 	if event.is_action_pressed("select_prev_slot"):
@@ -42,12 +46,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		emit_command(GameCommand.select_weapon(actor_id, WeaponSlot.WeaponType.SPREAD))
 	if event.is_action_pressed("restart_game"):
 		emit_command(GameCommand.restart(actor_id))
-
-	if event.is_action_pressed("expand_place"):
-		if _actor != null and _actor.get("expand_mode"):
-			var grid_pos = _get_mouse_grid_pos()
-			if grid_pos != null:
-				emit_command(GameCommand.place_cell(actor_id, grid_pos))
 
 func _get_move_vector() -> Vector2:
 	var x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
@@ -69,3 +67,20 @@ func _get_mouse_grid_pos() -> Variant:
 		return null
 	var local = _actor.to_local(_actor.get_global_mouse_position())
 	return _actor.local_to_grid(local)
+
+func _update_expand_hold() -> void:
+	var holding = Input.is_key_pressed(KEY_SHIFT)
+	if holding == _expand_hold:
+		return
+	_expand_hold = holding
+	emit_command(GameCommand.set_expand_hold(actor_id, _expand_hold))
+
+func _emit_expand_direction() -> void:
+	if Input.is_action_just_pressed("move_up"):
+		emit_command(GameCommand.expand_direction(actor_id, Vector2i.UP))
+	if Input.is_action_just_pressed("move_down"):
+		emit_command(GameCommand.expand_direction(actor_id, Vector2i.DOWN))
+	if Input.is_action_just_pressed("move_left"):
+		emit_command(GameCommand.expand_direction(actor_id, Vector2i.LEFT))
+	if Input.is_action_just_pressed("move_right"):
+		emit_command(GameCommand.expand_direction(actor_id, Vector2i.RIGHT))

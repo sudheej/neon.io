@@ -16,6 +16,7 @@ var game_over: bool = false
 var game_over_pulse: float = 0.0
 var pending_hud_shot: bool = false
 var input_enabled: bool = true
+var camera_follow_speed: float = 6.0
 
 @onready var player = $Player
 @onready var enemies_root = $Enemies
@@ -45,7 +46,12 @@ func _process(delta: float) -> void:
 		return
 	if player == null or not is_instance_valid(player):
 		return
-	camera.global_position = player.global_position
+	var focus = player.global_position
+	if player.has_method("get_active_cell_world_pos"):
+		focus = player.get_active_cell_world_pos()
+	if camera != null:
+		var t = 1.0 - exp(-camera_follow_speed * delta)
+		camera.global_position = camera.global_position.lerp(focus, t)
 	elapsed += delta
 	var combatants: Array[Node] = _get_combatants()
 	_process_combatants(delta, combatants)

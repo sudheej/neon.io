@@ -73,6 +73,14 @@ func _apply_command(command) -> void:
 				var grid_pos = command.payload.get("grid_pos", null)
 				if grid_pos != null:
 					actor.try_place_cell(grid_pos)
+		GameCommand.Type.SET_EXPAND_HOLD:
+			if actor != null and actor.has_method("set_expand_hold"):
+				var enabled = bool(command.payload.get("enabled", false))
+				actor.set_expand_hold(enabled)
+		GameCommand.Type.EXPAND_DIRECTION:
+			if actor != null and actor.has_method("try_expand_direction"):
+				var dir = command.payload.get("dir", Vector2i.ZERO)
+				actor.try_expand_direction(dir)
 		GameCommand.Type.SELECT_WEAPON:
 			if actor != null and actor.has_method("select_weapon_and_buy"):
 				var weapon_type = int(command.payload.get("weapon_type", 0))

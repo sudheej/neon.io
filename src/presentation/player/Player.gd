@@ -7,8 +7,10 @@ signal died(victim: Node)
 
 const MOVE_SPEED: float = 180.0
 const ACCEL: float = 12.0
-const EXPAND_COST: float = 6.0
+const EXPAND_COST: float = 50.0
 const HUMAN_DAMAGE_MULTIPLIER: float = 0.6
+const ARMOR_REDUCTION_PER_CELL: float = 0.04
+const ARMOR_REDUCTION_MAX: float = 0.4
 const SPAWN_DURATION: float = 0.35
 const DEATH_DURATION: float = 0.45
 const COLLISION_PUSH_SCALE: float = 0.5
@@ -16,8 +18,10 @@ const COLLISION_PULSE_LIFE: float = 0.18
 var velocity: Vector2 = Vector2.ZERO
 var xp: float = 300.0
 var expand_mode: bool = false
+var expand_hold: bool = false
 var show_range: bool = false
 var range_phase: float = 0.0
+var active_pulse_phase: float = 0.0
 var is_ai: bool = false
 var input_enabled: bool = true
 var actor_id: String = ""
@@ -76,6 +80,7 @@ func _process(delta: float) -> void:
 		_spawn_pulse()
 		pulse_timer = randf_range(0.15, 0.35)
 	range_phase = fmod(range_phase + delta * 0.6, TAU)
+	active_pulse_phase = fmod(active_pulse_phase + delta * 3.8, TAU)
 	if stun_time > 0.0:
 		stun_time = maxf(stun_time - delta, 0.0)
 	if damage_flash > 0.0:
@@ -200,6 +205,30 @@ func set_expand_mode(enabled: bool) -> void:
 	expand_command = expand_mode
 	queue_redraw()
 
+func set_expand_hold(enabled: bool) -> void:
+	expand_hold = enabled
+	queue_redraw()
+
+func try_expand_direction(dir: Vector2i) -> void:
+	if dir == Vector2i.ZERO:
+		return
+	if shape == null:
+		return
+	var base = weapon_system.get_armed_cell()
+	if not shape.cells.has(base):
+		return
+	var target = base + dir
+	if shape.cells.has(target):
+		_set_active_cell(target)
+		return
+	if xp < EXPAND_COST:
+		return
+	if shape.add_cell(target):
+		xp -= EXPAND_COST
+		weapon_system.on_shape_changed()
+		_set_active_cell(target)
+		queue_redraw()
+
 func try_place_cell(grid_pos: Vector2i) -> void:
 	place_command = grid_pos
 	_try_place_cell(grid_pos)
@@ -228,6 +257,11 @@ func set_ai_move_command(dir: Vector2) -> void:
 func apply_damage(amount: float, stun_duration: float, source: Node = null, weapon_type: int = -1) -> void:
 	if not is_ai:
 		amount *= HUMAN_DAMAGE_MULTIPLIER
+	var armor_cells = 0
+	if shape != null:
+		armor_cells = max(0, shape.cells.size() - 1)
+	var armor_reduction = clampf(armor_cells * ARMOR_REDUCTION_PER_CELL, 0.0, ARMOR_REDUCTION_MAX)
+	amount *= (1.0 - armor_reduction)
 	health -= amount
 	regen_timer = regen_delay
 	if stun_duration > 0.0:
@@ -245,6 +279,25 @@ func apply_damage(amount: float, stun_duration: float, source: Node = null, weap
 func local_to_grid(v: Vector2) -> Vector2i:
 	return shape.local_to_grid(v)
 
+func get_active_cell_grid_pos() -> Vector2i:
+	return weapon_system.get_armed_cell()
+
+func get_active_cell_world_pos() -> Vector2:
+	if shape == null:
+		return global_position
+	var active = weapon_system.get_armed_cell()
+	if not shape.cells.has(active):
+		return global_position
+	return global_position + shape.grid_to_local(active)
+
+func _set_active_cell(grid_pos: Vector2i) -> void:
+	if shape == null:
+		return
+	if not shape.cells.has(grid_pos):
+		return
+	weapon_system.set_armed_cell(grid_pos)
+	queue_redraw()
+
 func _try_place_cell(grid_pos: Vector2i) -> void:
 	if xp < EXPAND_COST:
 		return
@@ -254,20 +307,19 @@ func _try_place_cell(grid_pos: Vector2i) -> void:
 	if shape.add_cell(grid_pos):
 		xp -= EXPAND_COST
 		weapon_system.on_shape_changed()
+		_set_active_cell(grid_pos)
 		queue_redraw()
 
 func _get_valid_expand_cells() -> Array[Vector2i]:
 	var valid: Array[Vector2i] = []
-	var seen: Dictionary = {}
-	for cell in shape.cells.keys():
-		for dir in PlayerShapeScript.DIRS:
-			var neighbor = cell + dir
-			if shape.cells.has(neighbor):
-				continue
-			if seen.has(neighbor):
-				continue
-			seen[neighbor] = true
-			valid.append(neighbor)
+	var active_cell = weapon_system.get_armed_cell()
+	if not shape.cells.has(active_cell):
+		return valid
+	for dir in PlayerShapeScript.DIRS:
+		var neighbor = active_cell + dir
+		if shape.cells.has(neighbor):
+			continue
+		valid.append(neighbor)
 	return valid
 
 func _draw() -> void:
@@ -275,7 +327,7 @@ func _draw() -> void:
 	_draw_spawn_fx()
 	_draw_cells()
 	_draw_repel_pulses()
-	if expand_mode:
+	if expand_hold:
 		_draw_expand_ghosts()
 	_draw_selected_slot_range()
 
@@ -288,6 +340,7 @@ func _draw_cells() -> void:
 	var blink_outline := Color(damage_blink_color.r, damage_blink_color.g, damage_blink_color.b, 0.95)
 	var blink_inner := Color(damage_blink_color.r, damage_blink_color.g, damage_blink_color.b, 0.35)
 	var armed_cell: Vector2i = weapon_system.get_armed_cell()
+	var active_pulse = 0.5 + 0.5 * sin(active_pulse_phase)
 	for grid_pos in shape.cells.keys():
 		var local_pos = shape.grid_to_local(grid_pos)
 		var half = PlayerShapeScript.CELL_SIZE * 0.5
@@ -295,8 +348,11 @@ func _draw_cells() -> void:
 		var border_color := outline_active if grid_pos == armed_cell else outline
 		if blink_active:
 			border_color = border_color.lerp(blink_outline, blink_strength)
-		var border_width := 2.0 if grid_pos == armed_cell else 1.2
+		var border_width := 1.6 if grid_pos == armed_cell else 1.2
 		draw_rect(rect, border_color, false, border_width)
+		if grid_pos == armed_cell:
+			var glow = Color(0.4, 0.95, 1.0, 0.32 + 0.28 * active_pulse)
+			draw_rect(rect.grow(2.5), glow, false, 1.2 + 0.9 * active_pulse)
 		var inner_color := inner
 		if blink_active:
 			inner_color = inner_color.lerp(blink_inner, blink_strength)
