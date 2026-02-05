@@ -9,44 +9,54 @@ Quick run:
 - Always run `./run_game.sh` and confirm stdout has no errors before presenting any next steps.
 
 Core scenes:
-- `scenes/Main.tscn` -> `scenes/World.tscn`
+- `scenes/Main.tscn` -> `scenes/World.tscn` (wrappers for `src/presentation/scenes/*`)
 - `scenes/Player.tscn` is used for both human and AI.
+
+Architecture (new):
+- `src/domain/world/GameWorld.gd` is the command boundary.
+- Input pipeline: `InputSource -> CommandQueue -> GameWorld.apply(command) -> Events -> Presentation`.
+- Agent boundary: `src/infrastructure/agent/AgentBridge.gd` + `LocalAgentStub.gd` (disabled by default).
+- Network boundary: `src/infrastructure/network/NetworkAdapter.gd` (stub).
 
 Controls:
 - WASD / arrows: move
 - E: expand mode, LMB place
 - Tab: next slot, `[` (left bracket) previous slot
 - Q: toggle range ring
-- 1/2/3: buy ammo pack + select weapon (Laser/Stun/Homing)
+- 1/2/3/4: buy ammo pack + select weapon (Laser/Stun/Homing/Spread)
 - R: restart
 
 Gameplay systems:
-- Weapons: `scripts/weapons/WeaponSystem.gd`
+- Weapons: `scripts/weapons/WeaponSystem.gd` (wrapper for `src/presentation/weapons/WeaponSystem.gd`)
   - ammo per weapon, auto‑reload from credits when empty (auto_reload=true)
-  - ammo packs: Laser (+10/4 credits), Stun (+5/8), Homing (+3/12)
+  - ammo packs: Laser (+10/4 credits), Stun (+5/8), Homing (+3/12), Spread (+6/6)
   - homing capped to one active missile at a time
   - stun shots are green (custom beam/core color passed to `LaserShot`)
+  - spread weapon: purple primary beam (75% of laser damage); on impact, spawns slim purple beams from impact center to nearby enemies (50% laser damage) within SPREAD_RADIUS
+  - on game start, Stun and Spread auto-buy one pack (deducts credits)
 - Projectiles:
-  - `scripts/weapons/projectiles/LaserShot.gd` uses shader glow; tracks origin/target
+  - `scripts/weapons/projectiles/LaserShot.gd` (wrapper) uses shader glow; tracks origin/target
     - plays randomized theremin laser SFX, distance‑attenuated; AudioStreamPlayer2D is parented to world to avoid being freed early
     - loads audio via `.import` remap (uses `res://.godot/imported/*.oggvorbisstr`) because this Godot binary does not load raw `.wav`/`.ogg`
+    - supports flicker/jitter per beam for visual differentiation (used by spread beams)
   - `scripts/weapons/projectiles/HomingShot.gd` accelerates over 4s, applies damage on hit, orange glow + trail, self‑destructs
 - Player health and AI:
-  - `scripts/player/Player.gd` has health, stun, damage flash, `died` signal; AI uses same scene
+  - `scripts/player/Player.gd` (wrapper) has health, stun, damage flash, `died` signal; AI uses same scene
     - human player takes reduced damage (`HUMAN_DAMAGE_MULTIPLIER`) so health drops slower than AI
     - health regen after no damage (`regen_delay`, `regen_rate`)
+    - soft collision separation between combatants with small repel ripple effect
   - `scripts/ui/HealthBar.gd` draws always‑visible bar with delayed drain
     - drain lerp is slower for the human player
   - `scripts/ai/AIController.gd` handles movement/targeting/dodging; AI profiles (laser/stun/homing/balanced), difficulty ramp (movement scale)
     - AI movement starts slower and ramps more gradually (RAMP_TIME 120s, scale 0.35→0.9)
 - World:
-  - `scripts/world/World.gd` spawns AI players, ramps max AI count over time, free‑for‑all combatants
+  - `scripts/world/World.gd` (wrapper) spawns AI players, ramps max AI count over time, free‑for‑all combatants
   - Game over overlay in `scenes/World.tscn` when human dies; press R to restart
   - Game over shows Time Survived in hh:mm:ss with pulsing animation (`GameOver/TimeSurvived`)
 
 Rendering:
 - 2D MSAA enabled in `project.godot` (`anti_aliasing/quality/msaa_2d=3`)
-- Laser glow shader: `scripts/weapons/projectiles/LaserGlow.gdshader`
+- Laser glow shader: `scripts/weapons/projectiles/LaserGlow.gdshader` (wrapper for `src/presentation/weapons/projectiles/LaserGlow.gdshader`)
 
 Notes:
 - AI targets are combatants (group `combatants`) not just player.
