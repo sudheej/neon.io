@@ -11,14 +11,14 @@ const LASER_PACK_COST: float = 4.0
 const STUN_PACK_COST: float = 8.0
 const HOMING_PACK_COST: float = 12.0
 const SPREAD_PACK_COST: float = 6.0
-const LASER_PACK_AMMO: int = 10
-const STUN_PACK_AMMO: int = 5
-const HOMING_PACK_AMMO: int = 3
-const SPREAD_PACK_AMMO: int = 6
-const LASER_CAPACITY: int = 40
-const STUN_CAPACITY: int = 20
-const HOMING_CAPACITY: int = 15
-const SPREAD_CAPACITY: int = 24
+const LASER_PACK_AMMO: int = 15
+const STUN_PACK_AMMO: int = 8
+const HOMING_PACK_AMMO: int = 5
+const SPREAD_PACK_AMMO: int = 9
+const LASER_CAPACITY: int = 60
+const STUN_CAPACITY: int = 30
+const HOMING_CAPACITY: int = 24
+const SPREAD_CAPACITY: int = 36
 const LASER_DAMAGE: float = 4.0
 const SPREAD_PRIMARY_MULT: float = 0.75
 const SPREAD_SECONDARY_MULT: float = 0.5
@@ -49,10 +49,10 @@ var weapon_cooldowns: Dictionary = {
 	WeaponSlot.WeaponType.SPREAD: 0.65
 }
 var weapon_ammo: Dictionary = {
-	WeaponSlot.WeaponType.LASER: 20,
-	WeaponSlot.WeaponType.STUN: 0,
-	WeaponSlot.WeaponType.HOMING: 15,
-	WeaponSlot.WeaponType.SPREAD: 0
+	WeaponSlot.WeaponType.LASER: 50,
+	WeaponSlot.WeaponType.STUN: 50,
+	WeaponSlot.WeaponType.HOMING: 50,
+	WeaponSlot.WeaponType.SPREAD: 50
 }
 var auto_reload: bool = true
 var preferred_target: Node2D = null

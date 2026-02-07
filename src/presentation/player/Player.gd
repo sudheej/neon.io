@@ -14,9 +14,11 @@ const ARMOR_REDUCTION_MAX: float = 0.4
 const SPAWN_DURATION: float = 0.35
 const DEATH_DURATION: float = 0.45
 const COLLISION_PUSH_SCALE: float = 0.5
+const COLLISION_PLAYER_PUSH_SCALE: float = 0.22
+const COLLISION_AI_PUSH_SCALE: float = 0.55
 const COLLISION_PULSE_LIFE: float = 0.18
 var velocity: Vector2 = Vector2.ZERO
-var xp: float = 300.0
+var xp: float = 450.0
 var expand_mode: bool = false
 var expand_hold: bool = false
 var show_range: bool = false
@@ -47,6 +49,9 @@ var repel_pulses: Array[Dictionary] = []
 var spawn_timer: float = 0.0
 var death_timer: float = 0.0
 var is_dying: bool = false
+var debug_collision: bool = false
+var debug_collisions: Array[Dictionary] = []
+var debug_collision_print_timer: float = 0.0
 
 @onready var shape = $PlayerShape
 @onready var weapon_system = $WeaponSystem
@@ -59,6 +64,7 @@ func _ready() -> void:
 		actor_id = "player"
 	spawn_timer = SPAWN_DURATION
 	modulate.a = 0.0
+	debug_collision = OS.get_cmdline_args().has("--collision-debug")
 
 func _process(delta: float) -> void:
 	if is_dying:
@@ -88,6 +94,8 @@ func _process(delta: float) -> void:
 	if damage_blink_timer > 0.0:
 		damage_blink_timer = maxf(damage_blink_timer - delta, 0.0)
 		damage_blink_phase = fmod(damage_blink_phase + delta * 22.0, TAU)
+	if debug_collision and debug_collision_print_timer > 0.0:
+		debug_collision_print_timer = maxf(debug_collision_print_timer - delta, 0.0)
 
 	for i in range(pulses.size() - 1, -1, -1):
 		pulses[i]["time"] -= delta
@@ -117,7 +125,8 @@ func _physics_process(delta: float) -> void:
 		target_vel *= 0.35
 	velocity = velocity.lerp(target_vel, 1.0 - pow(0.001, delta * ACCEL))
 	global_position += velocity * delta
-	_apply_soft_collisions(delta)
+	if spawn_timer <= 0.0:
+		_apply_soft_collisions(delta)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if is_ai:
@@ -330,6 +339,8 @@ func _draw() -> void:
 	if expand_hold:
 		_draw_expand_ghosts()
 	_draw_selected_slot_range()
+	if debug_collision:
+		_draw_collision_debug()
 
 func _draw_cells() -> void:
 	var outline := Color(0.92, 0.96, 1.0, 0.9)
@@ -476,25 +487,96 @@ func _spawn_pulse() -> void:
 func _apply_soft_collisions(_delta: float) -> void:
 	var others = get_tree().get_nodes_in_group("combatants")
 	var my_radius = _get_collision_radius()
+	if debug_collision:
+		debug_collisions.clear()
 	for other in others:
 		var node = other as Node2D
 		if node == null or node == self:
 			continue
 		if not node.has_method("get_collision_radius"):
 			continue
-		var other_radius = node.get_collision_radius()
-		var to_me = global_position - node.global_position
-		var dist = to_me.length()
+		var other_spawn = node.get("spawn_timer")
+		if other_spawn != null and float(other_spawn) > 0.0:
+			continue
+		var collision = _get_cell_collision(node)
+		var dist = collision.get("dist", 0.0)
+		var min_dist = collision.get("min_dist", my_radius + node.get_collision_radius())
 		if dist < 0.001:
 			continue
-		var min_dist = my_radius + other_radius
 		if dist >= min_dist:
 			continue
-		var dir = to_me / dist
+		var dir = collision.get("dir", (global_position - node.global_position).normalized())
 		var push = (min_dist - dist) * COLLISION_PUSH_SCALE
-		global_position += dir * push
-		if push > 0.35:
-			_spawn_repel_pulse(global_position - dir * my_radius)
+		if debug_collision:
+			debug_collisions.append({
+				"other": node,
+				"dist": dist,
+				"min_dist": min_dist,
+				"push": push
+			})
+			if debug_collision_print_timer <= 0.0:
+				var other_id = String(node.get("actor_id"))
+				print("COLLIDE ", actor_id, " <-> ", other_id, " d=", dist, " md=", min_dist, " p=", push)
+				debug_collision_print_timer = 0.5
+		if is_ai:
+			global_position += dir * push
+		else:
+			var other_is_ai = bool(node.get("is_ai"))
+			if other_is_ai:
+				global_position += dir * (push * COLLISION_PLAYER_PUSH_SCALE)
+				node.global_position -= dir * (push * COLLISION_AI_PUSH_SCALE)
+			else:
+				global_position += dir * (push * COLLISION_PLAYER_PUSH_SCALE)
+		if push > 0.35 and not is_ai:
+			var pulse_pos = collision.get("self_pos", global_position - dir * my_radius)
+			_spawn_repel_pulse(pulse_pos)
+
+func _get_cell_collision(other: Node2D) -> Dictionary:
+	var result: Dictionary = {}
+	if shape == null:
+		return result
+	var other_shape = other.get_node_or_null("PlayerShape")
+	if other_shape == null or not other_shape.has_method("grid_to_local"):
+		return result
+	var cell_radius = PlayerShapeScript.CELL_SIZE * 0.5
+	var best_dist = INF
+	var best_dir = Vector2.ZERO
+	var best_self = Vector2.ZERO
+	var best_other = Vector2.ZERO
+	for my_cell in shape.cells.keys():
+		var my_pos = global_position + shape.grid_to_local(my_cell)
+		for other_cell in other_shape.cells.keys():
+			var other_pos = other.global_position + other_shape.grid_to_local(other_cell)
+			var to_me = my_pos - other_pos
+			var dist = to_me.length()
+			if dist < best_dist:
+				best_dist = dist
+				best_dir = to_me.normalized() if dist > 0.001 else Vector2.ZERO
+				best_self = my_pos
+				best_other = other_pos
+	result["dist"] = best_dist
+	result["min_dist"] = cell_radius * 2.0
+	result["dir"] = best_dir
+	result["self_pos"] = best_self
+	result["other_pos"] = best_other
+	return result
+
+func _draw_collision_debug() -> void:
+	var center := Vector2.ZERO
+	var radius := _get_collision_radius()
+	draw_arc(center, radius, 0.0, TAU, 48, Color(1.0, 0.3, 0.3, 0.2), 1.0)
+	var font = ThemeDB.fallback_font
+	var font_size = max(10, int(ThemeDB.fallback_font_size * 0.75))
+	var y = -radius - 12.0
+	for info in debug_collisions:
+		var other = info.get("other", null) as Node2D
+		if other == null or not is_instance_valid(other):
+			continue
+		var other_local = to_local(other.global_position)
+		draw_line(center, other_local, Color(1.0, 0.6, 0.1, 0.6), 1.0)
+		var text = "d=%.1f md=%.1f p=%.2f" % [info["dist"], info["min_dist"], info["push"]]
+		draw_string(font, Vector2(-radius, y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(1.0, 0.8, 0.6, 0.85))
+		y -= font_size + 2.0
 
 func get_collision_radius() -> float:
 	return _get_collision_radius()

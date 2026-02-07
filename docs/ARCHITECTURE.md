@@ -17,6 +17,12 @@ InputSource -> CommandQueue -> GameWorld.apply(command) -> Events
 - AI actors use `actor_id = "ai_<instance_id>"`.
 - Commands carry `actor_id` so future networking can route input to the correct entity.
 
+## Command Notes
+Expansion is now hold + directional:
+- `SET_EXPAND_HOLD` toggles the expansion preview while a key is held.
+- `EXPAND_DIRECTION` expands (or selects) the active cell in the given direction.
+Legacy expand commands remain for compatibility (`TOGGLE_EXPAND`, `PLACE_CELL`).
+
 ## Snapshot Format
 ```
 {
@@ -29,4 +35,3 @@ InputSource -> CommandQueue -> GameWorld.apply(command) -> Events
   }
 }
 ```
-
