@@ -20,7 +20,8 @@ Architecture (new):
 
 Controls:
 - WASD / arrows: move
-- E: expand mode, LMB place
+- Hold Shift: show expansion outlines (from active cell)
+- While holding Shift + direction (WASD/arrows): expand or select active cell
 - Tab: next slot, `[` (left bracket) previous slot
 - Q: toggle range ring
 - 1/2/3/4: buy ammo pack + select weapon (Laser/Stun/Homing/Spread)
@@ -29,11 +30,12 @@ Controls:
 Gameplay systems:
 - Weapons: `scripts/weapons/WeaponSystem.gd` (wrapper for `src/presentation/weapons/WeaponSystem.gd`)
   - ammo per weapon, auto‑reload from credits when empty (auto_reload=true)
-  - ammo packs: Laser (+10/4 credits), Stun (+5/8), Homing (+3/12), Spread (+6/6)
-  - homing capped to one active missile at a time
+  - ammo packs: Laser (+15/4 credits), Stun (+8/8), Homing (+5/12), Spread (+9/6)
+  - homing capped per player (up to one active missile per cell)
   - stun shots are green (custom beam/core color passed to `LaserShot`)
   - spread weapon: purple primary beam (75% of laser damage); on impact, spawns slim purple beams from impact center to nearby enemies (50% laser damage) within SPREAD_RADIUS
   - on game start, Stun and Spread auto-buy one pack (deducts credits)
+  - global weapon selection: all cells fire the currently selected weapon
 - Projectiles:
   - `scripts/weapons/projectiles/LaserShot.gd` (wrapper) uses shader glow; tracks origin/target
     - plays randomized theremin laser SFX, distance‑attenuated; AudioStreamPlayer2D is parented to world to avoid being freed early
@@ -43,6 +45,7 @@ Gameplay systems:
 - Player health and AI:
   - `scripts/player/Player.gd` (wrapper) has health, stun, damage flash, `died` signal; AI uses same scene
     - human player takes reduced damage (`HUMAN_DAMAGE_MULTIPLIER`) so health drops slower than AI
+    - expansion armor: extra cells reduce incoming damage (4% per cell, capped at 40%)
     - health regen after no damage (`regen_delay`, `regen_rate`)
     - soft collision separation between combatants with small repel ripple effect
   - `scripts/ui/HealthBar.gd` draws always‑visible bar with delayed drain
@@ -53,6 +56,7 @@ Gameplay systems:
   - `scripts/world/World.gd` (wrapper) spawns AI players, ramps max AI count over time, free‑for‑all combatants
   - Game over overlay in `scenes/World.tscn` when human dies; press R to restart
   - Game over shows Time Survived in hh:mm:ss with pulsing animation (`GameOver/TimeSurvived`)
+  - camera centers on active cell with smoothed follow
 
 Rendering:
 - 2D MSAA enabled in `project.godot` (`anti_aliasing/quality/msaa_2d=3`)
@@ -63,3 +67,6 @@ Notes:
 - Human player is in group `player`; AI sets `is_ai=true` and removes itself from `player` group.
 - This Godot binary reports AudioStream extensions: `tres`, `res`, `sample`, `oggvorbisstr`, `mp3str`; raw `.wav`/`.ogg` do not load without import.
 - Arrow keys use Godot 4 keycodes in `project.godot` (UP 4194320, DOWN 4194322, LEFT 4194319, RIGHT 4194321).
+- Debug: run `./run_game.sh --collision-debug` to draw collision overlay and print collision distances.
+- Economy: starting credits 450; expansion cost 50 credits per cell.
+- Starting ammo: 50 for all weapon types.

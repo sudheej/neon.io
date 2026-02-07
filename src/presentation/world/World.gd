@@ -16,6 +16,7 @@ var game_over: bool = false
 var game_over_pulse: float = 0.0
 var pending_hud_shot: bool = false
 var input_enabled: bool = true
+var camera_follow_speed: float = 6.0
 
 @onready var player = $Player
 @onready var enemies_root = $Enemies
@@ -45,7 +46,12 @@ func _process(delta: float) -> void:
 		return
 	if player == null or not is_instance_valid(player):
 		return
-	camera.global_position = player.global_position
+	var focus = player.global_position
+	if player.has_method("get_active_cell_world_pos"):
+		focus = player.get_active_cell_world_pos()
+	if camera != null:
+		var t = 1.0 - exp(-camera_follow_speed * delta)
+		camera.global_position = camera.global_position.lerp(focus, t)
 	elapsed += delta
 	var combatants: Array[Node] = _get_combatants()
 	_process_combatants(delta, combatants)
@@ -74,9 +80,37 @@ func _randomize_enemies() -> void:
 
 func _spawn_enemy() -> void:
 	var enemy = PlayerScene.instantiate() as Node2D
-	var angle = randf_range(0.0, TAU)
-	var radius = randf_range(120.0, ENEMY_SPAWN_RADIUS)
-	enemy.global_position = player.global_position + Vector2(cos(angle), sin(angle)) * radius
+	if player == null:
+		return
+	var enemy_radius = 16.0
+	if enemy.has_method("get_collision_radius"):
+		enemy_radius = float(enemy.get_collision_radius())
+	var player_radius = 16.0
+	if player.has_method("get_collision_radius"):
+		player_radius = float(player.get_collision_radius())
+	var min_radius = maxf(120.0, player_radius + enemy_radius + 12.0)
+	var combatants = _get_combatants()
+	var pos = player.global_position
+	for _i in range(12):
+		var angle = randf_range(0.0, TAU)
+		var radius = randf_range(min_radius, ENEMY_SPAWN_RADIUS)
+		var candidate = player.global_position + Vector2(cos(angle), sin(angle)) * radius
+		var ok = true
+		for entity in combatants:
+			var node = entity as Node2D
+			if node == null:
+				continue
+			var other_radius = 16.0
+			if node.has_method("get_collision_radius"):
+				other_radius = float(node.get_collision_radius())
+			if candidate.distance_to(node.global_position) < (other_radius + enemy_radius + 8.0):
+				ok = false
+				break
+		if ok:
+			pos = candidate
+			break
+		pos = candidate
+	enemy.global_position = pos
 	var ai = AIControllerScript.new()
 	var game_world = get_tree().get_first_node_in_group("game_world")
 	if game_world != null and game_world.has_method("get_command_queue"):
@@ -100,6 +134,10 @@ func _maybe_spawn_enemy(delta: float, enemy_count: int) -> void:
 
 func _update_hud(combatants: Array[Node]) -> void:
 	if hud_label == null:
+		return
+	if player == null or not is_instance_valid(player):
+		return
+	if player.get("xp") == null:
 		return
 	var enemy_count = max(combatants.size() - 1, 0)
 	hud_label.text = "CREDITS: %.1f\nENEMIES: %d\n[R] RESTART" % [player.xp, enemy_count]

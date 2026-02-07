@@ -63,6 +63,20 @@ World (presentation root)
 ./run_game.sh
 ```
 
+Debug collision overlay:
+```
+./run_game.sh --collision-debug
+```
+
+## Controls
+- WASD / arrows: move
+- Hold Shift: show expansion outlines from active cell
+- While holding Shift + direction: expand (if empty) or set active cell (if occupied)
+- Tab: next slot, `[` previous slot
+- Q: toggle range ring
+- 1/2/3/4: buy ammo pack + select weapon (Laser/Stun/Homing/Spread)
+- R: restart
+
 ## Command Pipeline (Core Contract)
 All gameplay input now routes through commands:
 - `HumanInputSource` captures local input and enqueues `GameCommand`.
@@ -80,13 +94,24 @@ Commands are `GameCommand` resources with:
 
 Current command types:
 - `MOVE` (`payload.dir: Vector2`)
-- `TOGGLE_EXPAND`
-- `PLACE_CELL` (`payload.grid_pos: Vector2i`)
+- `TOGGLE_EXPAND` (legacy)
+- `PLACE_CELL` (legacy, `payload.grid_pos: Vector2i`)
+- `SET_EXPAND_HOLD` (`payload.enabled: bool`)
+- `EXPAND_DIRECTION` (`payload.dir: Vector2i`)
 - `SELECT_WEAPON` (`payload.weapon_type`)
 - `SELECT_NEXT_SLOT`
 - `SELECT_PREV_SLOT`
 - `TOGGLE_RANGE`
 - `RESTART`
+
+## Gameplay Notes
+- Expansion cost: 50 credits per cell.
+- Expansion armor: +4% damage reduction per extra cell (cap 40%).
+- Starting credits: 450.
+- Starting ammo: 50 for all weapon types.
+- Global weapon selection: all cells fire the currently selected weapon.
+- Homing missiles are capped per player (up to one active missile per cell).
+- Camera follows the active cell with smoothing.
 
 State snapshots are `GameState.to_dict()` dictionaries:
 - `actors`: list of `id`, `position`, `health`, `max_health`, `is_ai`
@@ -132,4 +157,3 @@ Deferred for later:
 - Real transport (WebSocket/HTTP/gRPC).
 - Authority reconciliation, prediction, rollback.
 - Deterministic tick synchronization.
-
