@@ -24,6 +24,7 @@ const SPREAD_PRIMARY_MULT: float = 0.75
 const SPREAD_SECONDARY_MULT: float = 0.5
 const SPREAD_RADIUS: float = 140.0
 const HOMING_MAX_ACTIVE_PER_CELL: int = 1
+const WEAPON_SELECT_SFX_PATH: String = "res://assets/audio/ui/beep.wav"
 
 var player: Node2D
 var shape: Node
@@ -62,6 +63,8 @@ var shots_fired_by_weapon: Dictionary = {
 }
 var auto_reload: bool = true
 var preferred_target: Node2D = null
+var selection_sfx_loaded: bool = false
+var weapon_select_sfx: AudioStream = null
 
 func _ready() -> void:
 	player = get_parent() as Node2D
@@ -188,17 +191,21 @@ func try_set_selected_weapon(weapon_type: int) -> bool:
 			return false
 	selected_weapon_type = weapon_type
 	_apply_weapon_to_all_slots(weapon_type)
+	_play_weapon_select_sfx()
 	return true
 
 func select_weapon_and_buy(weapon_type: int) -> void:
 	var slot = get_selected_slot()
 	if slot == null:
 		return
+	var did_change = selected_weapon_type != weapon_type
 	var pack_cost = get_weapon_pack_cost(weapon_type)
 	var pack_amount = get_weapon_pack_ammo(weapon_type)
 	if get_weapon_ammo(weapon_type) > 0:
 		selected_weapon_type = weapon_type
 		_apply_weapon_to_all_slots(weapon_type)
+		if did_change:
+			_play_weapon_select_sfx()
 		return
 	if pack_cost <= 0.0 or pack_amount <= 0:
 		return
@@ -208,6 +215,8 @@ func select_weapon_and_buy(weapon_type: int) -> void:
 		weapon_ammo[weapon_type] = get_weapon_ammo(weapon_type) + pack_amount
 		selected_weapon_type = weapon_type
 		_apply_weapon_to_all_slots(weapon_type)
+		if did_change:
+			_play_weapon_select_sfx()
 
 func set_armed_cell(grid_pos: Vector2i) -> void:
 	armed_cell = grid_pos
@@ -524,3 +533,40 @@ func _sync_selection_to_armed_cell() -> void:
 		if slots[i].grid_pos == armed_cell:
 			selected_index = i
 			return
+
+func _play_weapon_select_sfx() -> void:
+	_ensure_selection_audio_loaded()
+	_play_ui_sfx(weapon_select_sfx, -9.0)
+
+func _play_ui_sfx(stream: AudioStream, volume_db: float) -> void:
+	if stream == null:
+		return
+	var sfx_player := AudioStreamPlayer.new()
+	sfx_player.stream = stream
+	sfx_player.volume_db = volume_db
+	sfx_player.pitch_scale = 1.0
+	var world := get_tree().get_first_node_in_group("world")
+	if world != null:
+		world.add_child(sfx_player)
+	else:
+		get_tree().current_scene.add_child(sfx_player)
+	sfx_player.play()
+	sfx_player.finished.connect(sfx_player.queue_free)
+
+func _ensure_selection_audio_loaded() -> void:
+	if selection_sfx_loaded:
+		return
+	selection_sfx_loaded = true
+	weapon_select_sfx = _load_imported_audio(WEAPON_SELECT_SFX_PATH)
+	if weapon_select_sfx == null:
+		weapon_select_sfx = ResourceLoader.load(WEAPON_SELECT_SFX_PATH) as AudioStream
+
+func _load_imported_audio(source_path: String) -> AudioStream:
+	var import_path := source_path + ".import"
+	var cfg := ConfigFile.new()
+	if cfg.load(import_path) != OK:
+		return null
+	var remap_path := cfg.get_value("remap", "path", "") as String
+	if remap_path.is_empty():
+		return null
+	return ResourceLoader.load(remap_path) as AudioStream
