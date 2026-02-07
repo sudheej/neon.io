@@ -13,6 +13,8 @@ const SPAWN_RAMP_SECONDS: float = 25.0
 const DANGER_WINDOW_SECONDS: float = 6.0
 const KILL_REWARD_DANGER_MULT: float = 1.35
 const TELEMETRY_INTERVAL: float = 10.0
+const LOW_HEALTH_THRESHOLD: float = 0.4
+const LOW_HEALTH_HYSTERESIS: float = 0.005
 const PlayerScene = preload("res://src/presentation/scenes/Player.tscn")
 const AIControllerScript = preload("res://src/input/AIInputSource.gd")
 
@@ -25,11 +27,13 @@ var input_enabled: bool = true
 var camera_follow_speed: float = 6.0
 var telemetry_enabled: bool = true
 var telemetry_timer: float = TELEMETRY_INTERVAL
+var low_health_alert_active: bool = false
 
 @onready var player = $Player
 @onready var enemies_root = $Enemies
 @onready var camera = $Camera2D
 @onready var hud_label: Label = $HUD/InfoPanel/Body/Info
+@onready var low_health_banner = $HUD/LowHealthBanner
 @onready var game_over_layer: CanvasLayer = $GameOver
 @onready var game_over_time: Label = $GameOver/TimeSurvived
 
@@ -71,6 +75,7 @@ func _process(delta: float) -> void:
 			_log_telemetry(combatants)
 	_process_combatants(delta, combatants)
 	_update_hud(combatants)
+	_update_announcements()
 	_maybe_spawn_enemy(delta, combatants.size() - 1)
 
 func _get_combatants() -> Array[Node]:
@@ -182,6 +187,8 @@ func get_kill_reward_multiplier() -> float:
 func _on_player_died(_victim: Node) -> void:
 	game_over = true
 	game_over_pulse = 0.0
+	if low_health_banner != null and low_health_banner.has_method("hide_announcement"):
+		low_health_banner.hide_announcement()
 	if telemetry_enabled:
 		_log_telemetry(_get_combatants())
 		_log_telemetry_summary()
@@ -270,3 +277,24 @@ func _weapon_usage_text() -> String:
 	var homing = int(usage.get(WeaponSlot.WeaponType.HOMING, 0))
 	var spread = int(usage.get(WeaponSlot.WeaponType.SPREAD, 0))
 	return "laser:%d stun:%d homing:%d spread:%d" % [laser, stun, homing, spread]
+
+func _update_announcements() -> void:
+	if player == null or not is_instance_valid(player):
+		return
+	if low_health_banner == null:
+		return
+	var max_hp = float(player.get("max_health"))
+	if max_hp <= 0.0:
+		return
+	var hp = float(player.get("health"))
+	var ratio = hp / max_hp
+	if ratio <= LOW_HEALTH_THRESHOLD:
+		if not low_health_alert_active:
+			low_health_alert_active = true
+			if low_health_banner.has_method("show_announcement"):
+				low_health_banner.show_announcement("LOW HEALTH")
+	elif ratio >= LOW_HEALTH_THRESHOLD + LOW_HEALTH_HYSTERESIS:
+		if low_health_alert_active:
+			low_health_alert_active = false
+			if low_health_banner.has_method("hide_announcement"):
+				low_health_banner.hide_announcement()
