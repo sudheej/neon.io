@@ -535,6 +535,8 @@ func _sync_selection_to_armed_cell() -> void:
 			return
 
 func _play_weapon_select_sfx() -> void:
+	if not _should_play_selection_sfx():
+		return
 	_ensure_selection_audio_loaded()
 	_play_ui_sfx(weapon_select_sfx, -9.0)
 
@@ -560,6 +562,11 @@ func _ensure_selection_audio_loaded() -> void:
 	weapon_select_sfx = _load_imported_audio(WEAPON_SELECT_SFX_PATH)
 	if weapon_select_sfx == null:
 		weapon_select_sfx = ResourceLoader.load(WEAPON_SELECT_SFX_PATH) as AudioStream
+
+func _should_play_selection_sfx() -> bool:
+	if player == null or not is_instance_valid(player):
+		return false
+	return player.is_in_group("player")
 
 func _load_imported_audio(source_path: String) -> AudioStream:
 	var import_path := source_path + ".import"
