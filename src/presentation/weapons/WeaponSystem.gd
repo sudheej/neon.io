@@ -8,9 +8,9 @@ const STUN_COST: float = 0.0
 const HOMING_COST: float = 0.0
 const SPREAD_COST: float = 0.0
 const LASER_PACK_COST: float = 4.0
-const STUN_PACK_COST: float = 8.0
-const HOMING_PACK_COST: float = 12.0
-const SPREAD_PACK_COST: float = 6.0
+const STUN_PACK_COST: float = 6.0
+const HOMING_PACK_COST: float = 7.0
+const SPREAD_PACK_COST: float = 5.0
 const LASER_PACK_AMMO: int = 15
 const STUN_PACK_AMMO: int = 8
 const HOMING_PACK_AMMO: int = 5
@@ -49,10 +49,16 @@ var weapon_cooldowns: Dictionary = {
 	WeaponSlot.WeaponType.SPREAD: 0.65
 }
 var weapon_ammo: Dictionary = {
-	WeaponSlot.WeaponType.LASER: 50,
-	WeaponSlot.WeaponType.STUN: 50,
-	WeaponSlot.WeaponType.HOMING: 50,
-	WeaponSlot.WeaponType.SPREAD: 50
+	WeaponSlot.WeaponType.LASER: 40,
+	WeaponSlot.WeaponType.STUN: 16,
+	WeaponSlot.WeaponType.HOMING: 8,
+	WeaponSlot.WeaponType.SPREAD: 14
+}
+var shots_fired_by_weapon: Dictionary = {
+	WeaponSlot.WeaponType.LASER: 0,
+	WeaponSlot.WeaponType.STUN: 0,
+	WeaponSlot.WeaponType.HOMING: 0,
+	WeaponSlot.WeaponType.SPREAD: 0
 }
 var auto_reload: bool = true
 var preferred_target: Node2D = null
@@ -253,7 +259,11 @@ func process_weapons(delta: float, enemies: Array[Node]) -> void:
 		used_targets[target] = true
 		_fire_at_target(slot, origin, target, enemies)
 		_consume_ammo(weapon_type, 1)
+		shots_fired_by_weapon[weapon_type] = int(shots_fired_by_weapon.get(weapon_type, 0)) + 1
 		slot_cooldowns[slot] = weapon_cooldowns.get(weapon_type, FIRE_COOLDOWN)
+
+func get_shots_fired_by_weapon() -> Dictionary:
+	return shots_fired_by_weapon.duplicate(true)
 
 func is_slot_blocked(slot) -> bool:
 	return slot_blocked.get(slot, false)

@@ -5,8 +5,14 @@ const WeaponSlot = preload("res://src/domain/weapons/WeaponSlot.gd")
 const ENEMY_START: int = 5
 const ENEMY_SPAWN_RADIUS: float = 260.0
 const MAX_ENEMIES: int = 16
-const SPAWN_INTERVAL: float = 2.4
+const SPAWN_INTERVAL: float = 2.2
+const SURGE_CYCLE_SECONDS: float = 36.0
+const SURGE_DURATION_SECONDS: float = 8.0
+const SURGE_SPAWN_MULT: float = 0.7
 const SPAWN_RAMP_SECONDS: float = 25.0
+const DANGER_WINDOW_SECONDS: float = 6.0
+const KILL_REWARD_DANGER_MULT: float = 1.35
+const TELEMETRY_INTERVAL: float = 10.0
 const PlayerScene = preload("res://src/presentation/scenes/Player.tscn")
 const AIControllerScript = preload("res://src/input/AIInputSource.gd")
 
@@ -17,6 +23,8 @@ var game_over_pulse: float = 0.0
 var pending_hud_shot: bool = false
 var input_enabled: bool = true
 var camera_follow_speed: float = 6.0
+var telemetry_enabled: bool = true
+var telemetry_timer: float = TELEMETRY_INTERVAL
 
 @onready var player = $Player
 @onready var enemies_root = $Enemies
@@ -28,7 +36,9 @@ var camera_follow_speed: float = 6.0
 func _ready() -> void:
 	add_to_group("world")
 	_randomize_enemies()
-	spawn_timer = SPAWN_INTERVAL
+	spawn_timer = _current_spawn_interval()
+	if OS.get_cmdline_args().has("--no-telemetry"):
+		telemetry_enabled = false
 	if player != null and player.has_signal("died"):
 		player.died.connect(_on_player_died)
 	_maybe_schedule_hud_screenshot()
@@ -54,6 +64,11 @@ func _process(delta: float) -> void:
 		camera.global_position = camera.global_position.lerp(focus, t)
 	elapsed += delta
 	var combatants: Array[Node] = _get_combatants()
+	if telemetry_enabled:
+		telemetry_timer -= delta
+		if telemetry_timer <= 0.0:
+			telemetry_timer = TELEMETRY_INTERVAL
+			_log_telemetry(combatants)
 	_process_combatants(delta, combatants)
 	_update_hud(combatants)
 	_maybe_spawn_enemy(delta, combatants.size() - 1)
@@ -126,7 +141,7 @@ func _maybe_spawn_enemy(delta: float, enemy_count: int) -> void:
 	spawn_timer -= delta
 	if spawn_timer > 0.0:
 		return
-	spawn_timer = SPAWN_INTERVAL
+	spawn_timer = _current_spawn_interval()
 	var cap = _current_enemy_cap()
 	if enemy_count >= cap:
 		return
@@ -146,9 +161,30 @@ func _current_enemy_cap() -> int:
 	var ramp = int(floor(elapsed / SPAWN_RAMP_SECONDS))
 	return clamp(ENEMY_START + ramp, ENEMY_START, MAX_ENEMIES)
 
+func _current_spawn_interval() -> float:
+	if _is_surge_active():
+		return SPAWN_INTERVAL * SURGE_SPAWN_MULT
+	return SPAWN_INTERVAL
+
+func _is_surge_active() -> bool:
+	if SURGE_CYCLE_SECONDS <= 0.0 or elapsed < SURGE_CYCLE_SECONDS:
+		return false
+	return fmod(elapsed, SURGE_CYCLE_SECONDS) < SURGE_DURATION_SECONDS
+
+func get_kill_reward_multiplier() -> float:
+	if SPAWN_RAMP_SECONDS <= 0.0:
+		return 1.0
+	var cycle = fmod(elapsed, SPAWN_RAMP_SECONDS)
+	if cycle < DANGER_WINDOW_SECONDS:
+		return KILL_REWARD_DANGER_MULT
+	return 1.0
+
 func _on_player_died(_victim: Node) -> void:
 	game_over = true
 	game_over_pulse = 0.0
+	if telemetry_enabled:
+		_log_telemetry(_get_combatants())
+		_log_telemetry_summary()
 	if game_over_layer != null:
 		game_over_layer.visible = true
 	_update_game_over_time()
@@ -189,3 +225,48 @@ func _do_hud_screenshot(delay: float, path: String) -> void:
 
 func request_restart() -> void:
 	get_tree().reload_current_scene()
+
+func _log_telemetry(combatants: Array[Node]) -> void:
+	if player == null or not is_instance_valid(player):
+		return
+	var enemy_count = max(combatants.size() - 1, 0)
+	var xp_val = float(player.get("xp"))
+	var expansions = int(player.get("expansions_bought"))
+	var cells = 1
+	if player.has_node("PlayerShape"):
+		var shape = player.get_node("PlayerShape")
+		if shape != null:
+			var shape_cells = shape.get("cells")
+			if shape_cells is Dictionary:
+				cells = max(1, (shape_cells as Dictionary).size())
+	var usage_text = _weapon_usage_text()
+	print(
+		"[telemetry] t=%.1fs credits=%.1f cells=%d expansions=%d enemies=%d surge=%d usage={%s}" %
+		[elapsed, xp_val, cells, expansions, enemy_count, 1 if _is_surge_active() else 0, usage_text]
+	)
+
+func _log_telemetry_summary() -> void:
+	if player == null or not is_instance_valid(player):
+		return
+	var xp_val = float(player.get("xp"))
+	var expansions = int(player.get("expansions_bought"))
+	var usage_text = _weapon_usage_text()
+	print(
+		"[telemetry-summary] survived=%.1fs credits=%.1f expansions=%d surge=%d usage={%s}" %
+		[elapsed, xp_val, expansions, 1 if _is_surge_active() else 0, usage_text]
+	)
+
+func _weapon_usage_text() -> String:
+	if player == null or not is_instance_valid(player):
+		return ""
+	if not player.has_node("WeaponSystem"):
+		return ""
+	var system = player.get_node("WeaponSystem")
+	if system == null or not system.has_method("get_shots_fired_by_weapon"):
+		return ""
+	var usage: Dictionary = system.get_shots_fired_by_weapon()
+	var laser = int(usage.get(WeaponSlot.WeaponType.LASER, 0))
+	var stun = int(usage.get(WeaponSlot.WeaponType.STUN, 0))
+	var homing = int(usage.get(WeaponSlot.WeaponType.HOMING, 0))
+	var spread = int(usage.get(WeaponSlot.WeaponType.SPREAD, 0))
+	return "laser:%d stun:%d homing:%d spread:%d" % [laser, stun, homing, spread]
