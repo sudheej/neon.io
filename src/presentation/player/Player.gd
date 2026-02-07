@@ -7,7 +7,19 @@ signal died(victim: Node)
 
 const MOVE_SPEED: float = 180.0
 const ACCEL: float = 12.0
-const EXPAND_COST: float = 50.0
+const EXPAND_COST: float = 60.0
+const KILL_REWARD_BASE: float = 6.5
+const KILL_REWARD_PER_EXTRA_CELL: float = 2.0
+const KILL_REWARD_MAX: float = 20.0
+const KILL_COMBO_WINDOW: float = 4.0
+const KILL_COMBO_BONUS_STEP: float = 1.0
+const KILL_COMBO_BONUS_MAX: float = 4.0
+const LOW_CREDIT_THRESHOLD: float = 10.0
+const LOW_CREDIT_STIPEND: float = 2.0
+const LOW_CREDIT_INTERVAL: float = 5.0
+const LOW_HEALTH_THRESHOLD: float = 0.4
+const CRITICAL_SFX_COOLDOWN: float = 4.0
+const CRITICAL_SFX_PATH: String = "res://assets/audio/ui/critical.wav"
 const HUMAN_DAMAGE_MULTIPLIER: float = 0.6
 const ARMOR_REDUCTION_PER_CELL: float = 0.04
 const ARMOR_REDUCTION_MAX: float = 0.4
@@ -18,7 +30,8 @@ const COLLISION_PLAYER_PUSH_SCALE: float = 0.22
 const COLLISION_AI_PUSH_SCALE: float = 0.55
 const COLLISION_PULSE_LIFE: float = 0.18
 var velocity: Vector2 = Vector2.ZERO
-var xp: float = 450.0
+var xp: float = 250.0
+var expansions_bought: int = 0
 var expand_mode: bool = false
 var expand_hold: bool = false
 var show_range: bool = false
@@ -38,6 +51,13 @@ var damage_blink_color: Color = Color(1.0, 0.4, 0.4, 1.0)
 var regen_delay: float = 3.0
 var regen_rate: float = 4.0
 var regen_timer: float = 0.0
+var combo_chain: int = 0
+var combo_timer: float = 0.0
+var low_credit_timer: float = LOW_CREDIT_INTERVAL
+var critical_sfx_timer: float = 0.0
+var critical_sfx_armed: bool = true
+var event_audio_loaded: bool = false
+var critical_sfx: AudioStream = null
 
 var move_command: Vector2 = Vector2.ZERO
 var expand_command: bool = false
@@ -81,6 +101,24 @@ func _process(delta: float) -> void:
 		regen_timer = maxf(regen_timer - delta, 0.0)
 	elif health < max_health:
 		health = minf(max_health, health + regen_rate * delta)
+	if combo_timer > 0.0:
+		combo_timer = maxf(combo_timer - delta, 0.0)
+	elif combo_chain > 0:
+		combo_chain = 0
+	low_credit_timer = maxf(low_credit_timer - delta, 0.0)
+	critical_sfx_timer = maxf(critical_sfx_timer - delta, 0.0)
+	if not is_ai:
+		if xp < LOW_CREDIT_THRESHOLD and low_credit_timer <= 0.0:
+			add_xp(LOW_CREDIT_STIPEND)
+			low_credit_timer = LOW_CREDIT_INTERVAL
+		var health_ratio := health / maxf(max_health, 0.001)
+		if health_ratio <= LOW_HEALTH_THRESHOLD:
+			if critical_sfx_armed and critical_sfx_timer <= 0.0:
+				_play_critical_sfx()
+				critical_sfx_timer = CRITICAL_SFX_COOLDOWN
+				critical_sfx_armed = false
+		elif health_ratio >= LOW_HEALTH_THRESHOLD + 0.08:
+			critical_sfx_armed = true
 	pulse_timer -= delta
 	if pulse_timer <= 0.0:
 		_spawn_pulse()
@@ -176,6 +214,15 @@ func _update_commands() -> void:
 func add_xp(amount: float) -> void:
 	xp += amount
 
+func award_kill_reward(base_reward: float) -> void:
+	var chain_next = combo_chain + 1 if combo_timer > 0.0 else 1
+	var combo_bonus = minf(float(max(0, chain_next - 1)) * KILL_COMBO_BONUS_STEP, KILL_COMBO_BONUS_MAX)
+	add_xp(base_reward + combo_bonus)
+	combo_chain = chain_next
+	combo_timer = KILL_COMBO_WINDOW
+	if combo_bonus > 0.0:
+		print("[reward] combo x%d bonus=%.1f" % [combo_chain, combo_bonus])
+
 func spend_xp(amount: float) -> bool:
 	if xp < amount:
 		return false
@@ -234,6 +281,7 @@ func try_expand_direction(dir: Vector2i) -> void:
 		return
 	if shape.add_cell(target):
 		xp -= EXPAND_COST
+		expansions_bought += 1
 		weapon_system.on_shape_changed()
 		_set_active_cell(target)
 		queue_redraw()
@@ -280,10 +328,23 @@ func apply_damage(amount: float, stun_duration: float, source: Node = null, weap
 	damage_blink_phase = 0.0
 	damage_blink_color = _get_damage_blink_color(weapon_type)
 	if health <= 0.0 and not is_dying:
-		if source != null and source.has_method("add_xp"):
-			source.add_xp(10.0)
+		if source != null and source.has_method("award_kill_reward"):
+			source.award_kill_reward(_compute_kill_reward())
+		elif source != null and source.has_method("add_xp"):
+			source.add_xp(_compute_kill_reward())
 		emit_signal("died", self)
 		_start_death()
+
+func _compute_kill_reward() -> float:
+	var cell_count = 1
+	if shape != null:
+		cell_count = max(1, shape.cells.size())
+	var reward = KILL_REWARD_BASE + float(max(0, cell_count - 1)) * KILL_REWARD_PER_EXTRA_CELL
+	reward = minf(reward, KILL_REWARD_MAX)
+	var world = get_tree().get_first_node_in_group("world")
+	if world != null and world.has_method("get_kill_reward_multiplier"):
+		reward *= float(world.get_kill_reward_multiplier())
+	return reward
 
 func local_to_grid(v: Vector2) -> Vector2i:
 	return shape.local_to_grid(v)
@@ -315,6 +376,7 @@ func _try_place_cell(grid_pos: Vector2i) -> void:
 		return
 	if shape.add_cell(grid_pos):
 		xp -= EXPAND_COST
+		expansions_bought += 1
 		weapon_system.on_shape_changed()
 		_set_active_cell(grid_pos)
 		queue_redraw()
@@ -384,6 +446,45 @@ func _get_damage_blink_color(weapon_type: int) -> Color:
 			return Color(0.75, 0.4, 1.0, 1.0)
 		_:
 			return Color(1.0, 0.4, 0.4, 1.0)
+
+func _play_critical_sfx() -> void:
+	if is_ai:
+		return
+	_ensure_event_audio_loaded()
+	_play_event_sfx(critical_sfx, -4.5)
+
+func _play_event_sfx(stream: AudioStream, volume_db: float) -> void:
+	if stream == null:
+		return
+	var player := AudioStreamPlayer.new()
+	player.stream = stream
+	player.volume_db = volume_db
+	player.pitch_scale = 1.0
+	var world := get_tree().get_first_node_in_group("world")
+	if world != null:
+		world.add_child(player)
+	else:
+		get_tree().current_scene.add_child(player)
+	player.play()
+	player.finished.connect(player.queue_free)
+
+func _ensure_event_audio_loaded() -> void:
+	if event_audio_loaded:
+		return
+	event_audio_loaded = true
+	critical_sfx = _load_imported_audio(CRITICAL_SFX_PATH)
+	if critical_sfx == null:
+		critical_sfx = ResourceLoader.load(CRITICAL_SFX_PATH) as AudioStream
+
+func _load_imported_audio(source_path: String) -> AudioStream:
+	var import_path := source_path + ".import"
+	var cfg := ConfigFile.new()
+	if cfg.load(import_path) != OK:
+		return null
+	var remap_path := cfg.get_value("remap", "path", "") as String
+	if remap_path.is_empty():
+		return null
+	return ResourceLoader.load(remap_path) as AudioStream
 
 func _draw_pulse_edges(rect: Rect2) -> void:
 	for pulse in pulses:

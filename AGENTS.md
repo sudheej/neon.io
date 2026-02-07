@@ -30,12 +30,13 @@ Controls:
 Gameplay systems:
 - Weapons: `scripts/weapons/WeaponSystem.gd` (wrapper for `src/presentation/weapons/WeaponSystem.gd`)
   - ammo per weapon, auto‑reload from credits when empty (auto_reload=true)
-  - ammo packs: Laser (+15/4 credits), Stun (+8/8), Homing (+5/12), Spread (+9/6)
+  - ammo packs: Laser (+15/4 credits), Stun (+8/6), Homing (+5/7), Spread (+9/5)
   - homing capped per player (up to one active missile per cell)
   - stun shots are green (custom beam/core color passed to `LaserShot`)
   - spread weapon: purple primary beam (75% of laser damage); on impact, spawns slim purple beams from impact center to nearby enemies (50% laser damage) within SPREAD_RADIUS
   - on game start, Stun and Spread auto-buy one pack (deducts credits)
   - global weapon selection: all cells fire the currently selected weapon
+  - starting ammo: Laser 40, Stun 16, Homing 8, Spread 14
 - Projectiles:
   - `scripts/weapons/projectiles/LaserShot.gd` (wrapper) uses shader glow; tracks origin/target
     - plays randomized theremin laser SFX, distance‑attenuated; AudioStreamPlayer2D is parented to world to avoid being freed early
@@ -47,6 +48,10 @@ Gameplay systems:
     - human player takes reduced damage (`HUMAN_DAMAGE_MULTIPLIER`) so health drops slower than AI
     - expansion armor: extra cells reduce incoming damage (4% per cell, capped at 40%)
     - health regen after no damage (`regen_delay`, `regen_rate`)
+    - kill reward formula (for killer): base 6.5 + 2.0 per victim extra cell, capped at 20 before world multiplier
+    - kill combo bonus: 4s chain window, +1 per chained kill, capped +4
+    - low-credit safety net: if credits < 10, +2 credits every 5s
+    - low-health alert: `critical.wav` plays when health drops into critical zone (currently 40% threshold with cooldown)
     - soft collision separation between combatants with small repel ripple effect
   - `scripts/ui/HealthBar.gd` draws always‑visible bar with delayed drain
     - drain lerp is slower for the human player
@@ -54,6 +59,10 @@ Gameplay systems:
     - AI movement starts slower and ramps more gradually (RAMP_TIME 120s, scale 0.35→0.9)
 - World:
   - `scripts/world/World.gd` (wrapper) spawns AI players, ramps max AI count over time, free‑for‑all combatants
+  - timed surge events: every 36s cycle, 8s surge window with faster spawn cadence (`SPAWN_INTERVAL * 0.7`)
+  - danger kill-reward multiplier: 1.35 during first 6s of each 25s ramp cycle
+  - telemetry prints every 10s and on death; includes credits/cells/expansions/enemies/surge/weapon usage
+  - `--no-telemetry` disables telemetry prints
   - Game over overlay in `scenes/World.tscn` when human dies; press R to restart
   - Game over shows Time Survived in hh:mm:ss with pulsing animation (`GameOver/TimeSurvived`)
   - camera centers on active cell with smoothed follow
@@ -68,5 +77,8 @@ Notes:
 - This Godot binary reports AudioStream extensions: `tres`, `res`, `sample`, `oggvorbisstr`, `mp3str`; raw `.wav`/`.ogg` do not load without import.
 - Arrow keys use Godot 4 keycodes in `project.godot` (UP 4194320, DOWN 4194322, LEFT 4194319, RIGHT 4194321).
 - Debug: run `./run_game.sh --collision-debug` to draw collision overlay and print collision distances.
-- Economy: starting credits 450; expansion cost 50 credits per cell.
-- Starting ammo: 50 for all weapon types.
+- Economy: starting credits 250; expansion cost 60 credits per cell.
+- Event audio:
+  - `critical.wav` and `powerup.wav` live under `assets/audio/ui/`
+  - `powerup.wav` is intentionally disabled in gameplay flow for now
+  - run `./run_game.sh --headless --import` after moving/adding audio assets to refresh `.import` remaps

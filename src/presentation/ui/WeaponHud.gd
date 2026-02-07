@@ -23,6 +23,7 @@ const WEAPON_NAMES := {
 
 const PADDING := Vector2(12.0, 10.0)
 const ROW_HEIGHT := 38.0
+const ROW_GAP := 4.0
 const RING_RADIUS := 16.0
 const RING_WIDTH := 2.0
 const BAR_WIDTH := 72.0
@@ -143,7 +144,7 @@ func _draw() -> void:
 		var baseline = ring_center.y + text_size.y * 0.35
 		draw_string(font, Vector2(ring_center.x - text_size.x * 0.5, baseline), percent_text, HORIZONTAL_ALIGNMENT_LEFT, -1, percent_size, TEXT_PRIMARY)
 
-		y += ROW_HEIGHT
+		y += ROW_HEIGHT + ROW_GAP
 
 func _get_capacity(weapon_type: int) -> int:
 	if weapon_system == null:
