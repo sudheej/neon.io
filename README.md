@@ -15,6 +15,7 @@ World (presentation root)
 |-- BlueprintGrid (visuals)
 |-- Player (presentation + combatant logic)
 |-- Enemies (container)
+|-- BoostOrbs (drop container)
 |-- HUD / GameOver (UI)
 |-- GameWorld (domain boundary)
     |-- CommandQueue
@@ -105,13 +106,26 @@ Current command types:
 - `RESTART`
 
 ## Gameplay Notes
-- Expansion cost: 50 credits per cell.
+- Expansion cost: 60 credits per cell.
 - Expansion armor: +4% damage reduction per extra cell (cap 40%).
-- Starting credits: 450.
-- Starting ammo: 50 for all weapon types.
+- Starting credits: 250.
+- Starting ammo: Laser 40, Stun 16, Homing 8, Spread 14.
 - Global weapon selection: all cells fire the currently selected weapon.
 - Homing missiles are capped per player (up to one active missile per cell).
 - Camera follows the active cell with smoothing.
+- Boost orbs spawn on any combatant death:
+  - types: XP, weapon-specific ammo, health
+  - ammo orb colors match weapon colors (laser cyan, stun green, homing orange, spread purple)
+  - value scales by victim survival time + credits + cell count
+  - both player and AI can consume
+  - touching while capped still invalidates the orb (denial play), with a short CRT-style collapse/fade animation
+  - XP orb shows `$`, health orb shows `+`
+  - orb lifetime: 20s
+- AI behavior includes profile/state-aware orb decisions:
+  - pursues useful orb types based on health, ammo capacity need, credits, and nearby enemy pressure
+  - blends orb pursuit with combat steering
+- Enemy spawns are mixed:
+  - near player, farther from player, or around ongoing action (other combatants / existing orbs)
 
 State snapshots are `GameState.to_dict()` dictionaries:
 - `actors`: list of `id`, `position`, `health`, `max_health`, `is_ai`

@@ -34,6 +34,9 @@ func configure(type_id: int, value: float, weapon_id: int = WeaponSlot.WeaponTyp
 	_base_color = _resolve_color()
 	queue_redraw()
 
+func _ready() -> void:
+	add_to_group("boost_orbs")
+
 func _process(delta: float) -> void:
 	if _invalidating:
 		_invalidate_timer = maxf(_invalidate_timer - delta, 0.0)
@@ -54,6 +57,18 @@ func _process(delta: float) -> void:
 
 func get_pickup_radius() -> float:
 	return _current_radius() + PICKUP_PADDING
+
+func get_boost_type() -> int:
+	return boost_type
+
+func get_weapon_type() -> int:
+	return weapon_type
+
+func get_amount() -> float:
+	return amount
+
+func is_pickable() -> bool:
+	return (not _invalidating) and amount > 0.0
 
 func is_entity_in_pickup_range(entity: Node2D) -> bool:
 	if entity == null or not is_instance_valid(entity):

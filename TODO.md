@@ -1,5 +1,13 @@
 # TODO
 
+## Orbs and AI
+- Tune orb drop distribution by phase:
+  - early game: slightly more ammo/health
+  - late game: slightly more XP
+- Add orb telemetry fields (`orbs_spawned`, `orbs_consumed`, `orb_type_breakdown`, `denied_orbs`) to measure impact.
+- Consider profile-specific orb aggression multipliers so some AI variants are visibly more greedy.
+- Add optional debug overlay for orb pickup radius/cell overlap checks.
+
 ## Economy and Progression
 - Add `--audio-debug` flag for temporary event-sound tracing (`critical` trigger timestamps, combo bonus events), then remove once tuned.
 - Tune low-credit safety net after more telemetry samples:

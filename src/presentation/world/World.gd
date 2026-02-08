@@ -5,6 +5,11 @@ const BoostOrbScript = preload("res://src/presentation/world/BoostOrb.gd")
 
 const ENEMY_START: int = 5
 const ENEMY_SPAWN_RADIUS: float = 260.0
+const ENEMY_SPAWN_RADIUS_FAR: float = 420.0
+const ACTION_SPAWN_CHANCE: float = 0.55
+const PLAYER_FAR_SPAWN_CHANCE: float = 0.45
+const ACTION_SPAWN_MIN_RADIUS: float = 84.0
+const ACTION_SPAWN_MAX_RADIUS: float = 240.0
 const MAX_ENEMIES: int = 16
 const SPAWN_INTERVAL: float = 2.2
 const SURGE_CYCLE_SECONDS: float = 36.0
@@ -125,13 +130,23 @@ func _spawn_enemy() -> void:
 	var player_radius = 16.0
 	if player.has_method("get_collision_radius"):
 		player_radius = float(player.get_collision_radius())
-	var min_radius = maxf(120.0, player_radius + enemy_radius + 12.0)
 	var combatants = _get_combatants()
-	var pos = player.global_position
+	var anchor = player.global_position
+	var min_radius = maxf(120.0, player_radius + enemy_radius + 12.0)
+	var max_radius = ENEMY_SPAWN_RADIUS
+	if randf() < ACTION_SPAWN_CHANCE:
+		anchor = _pick_action_spawn_anchor(combatants)
+		if anchor.distance_to(player.global_position) > 1.0:
+			min_radius = maxf(ACTION_SPAWN_MIN_RADIUS, enemy_radius + 10.0)
+			max_radius = ACTION_SPAWN_MAX_RADIUS
+	if anchor.distance_to(player.global_position) <= 1.0 and randf() < PLAYER_FAR_SPAWN_CHANCE:
+		min_radius = maxf(min_radius, 185.0)
+		max_radius = ENEMY_SPAWN_RADIUS_FAR
+	var pos = anchor
 	for _i in range(12):
 		var angle = randf_range(0.0, TAU)
-		var radius = randf_range(min_radius, ENEMY_SPAWN_RADIUS)
-		var candidate = player.global_position + Vector2(cos(angle), sin(angle)) * radius
+		var radius = randf_range(min_radius, max_radius)
+		var candidate = anchor + Vector2(cos(angle), sin(angle)) * radius
 		var ok = true
 		for entity in combatants:
 			var node = entity as Node2D
@@ -160,6 +175,26 @@ func _spawn_enemy() -> void:
 		enemy.set_ai_enabled(true)
 	if enemy.has_signal("died"):
 		enemy.died.connect(_on_combatant_died)
+
+func _pick_action_spawn_anchor(combatants: Array[Node]) -> Vector2:
+	if boost_orbs_root != null and boost_orbs_root.get_child_count() > 0 and randf() < 0.45:
+		var index = randi() % boost_orbs_root.get_child_count()
+		var orb = boost_orbs_root.get_child(index) as Node2D
+		if orb != null and is_instance_valid(orb):
+			return orb.global_position
+	var non_player: Array[Node2D] = []
+	for entity in combatants:
+		var node = entity as Node2D
+		if node == null or not is_instance_valid(node):
+			continue
+		if node == player:
+			continue
+		if bool(node.get("is_dying")):
+			continue
+		non_player.append(node)
+	if non_player.is_empty():
+		return player.global_position
+	return non_player[randi() % non_player.size()].global_position
 
 func _maybe_spawn_enemy(delta: float, enemy_count: int) -> void:
 	spawn_timer -= delta
