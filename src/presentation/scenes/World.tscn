@@ -222,5 +222,7 @@ text = "Time Survived: 00:00:00"
 
 [node name="Enemies" type="Node2D" parent="."]
 
+[node name="BoostOrbs" type="Node2D" parent="."]
+
 [node name="Camera2D" type="Camera2D" parent="."]
 current = true

@@ -151,6 +151,20 @@ func get_weapon_pack_ammo(weapon_type: int) -> int:
 func get_weapon_ammo(weapon_type: int) -> int:
 	return weapon_ammo.get(weapon_type, 0)
 
+func add_weapon_ammo(weapon_type: int, amount: int) -> int:
+	if amount <= 0:
+		return 0
+	var current = get_weapon_ammo(weapon_type)
+	var capacity = get_weapon_capacity(weapon_type)
+	if capacity <= 0:
+		return 0
+	var room = max(capacity - current, 0)
+	var gained = min(room, amount)
+	if gained <= 0:
+		return 0
+	weapon_ammo[weapon_type] = current + gained
+	return gained
+
 func get_weapon_capacity(weapon_type: int) -> int:
 	match weapon_type:
 		WeaponSlot.WeaponType.LASER:

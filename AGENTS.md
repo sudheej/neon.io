@@ -37,6 +37,7 @@ Gameplay systems:
   - on game start, Stun and Spread auto-buy one pack (deducts credits)
   - global weapon selection: all cells fire the currently selected weapon
   - starting ammo: Laser 40, Stun 16, Homing 8, Spread 14
+  - `add_weapon_ammo(weapon_type, amount)` respects weapon capacity (used by orb pickups)
 - Projectiles:
   - `scripts/weapons/projectiles/LaserShot.gd` (wrapper) uses shader glow; tracks origin/target
     - plays randomized theremin laser SFX, distance‑attenuated; AudioStreamPlayer2D is parented to world to avoid being freed early
@@ -57,8 +58,13 @@ Gameplay systems:
     - drain lerp is slower for the human player
   - `scripts/ai/AIController.gd` handles movement/targeting/dodging; AI profiles (laser/stun/homing/balanced), difficulty ramp (movement scale)
     - AI movement starts slower and ramps more gradually (RAMP_TIME 120s, scale 0.35→0.9)
+    - AI now evaluates nearby boost orbs with profile/state-aware priorities (health missing, ammo need by weapon, low credits, local pressure)
+    - AI may commit to orb pickups at close range, otherwise blends orb-seeking with combat movement
 - World:
   - `scripts/world/World.gd` (wrapper) spawns AI players, ramps max AI count over time, free‑for‑all combatants
+  - enemy spawn is no longer purely player-centric:
+    - can spawn farther from player
+    - can spawn around active action anchors (existing enemies or boost orbs)
   - timed surge events: every 36s cycle, 8s surge window with faster spawn cadence (`SPAWN_INTERVAL * 0.7`)
   - danger kill-reward multiplier: 1.35 during first 6s of each 25s ramp cycle
   - telemetry prints every 10s and on death; includes credits/cells/expansions/enemies/surge/weapon usage
@@ -66,6 +72,13 @@ Gameplay systems:
   - Game over overlay in `scenes/World.tscn` when human dies; press R to restart
   - Game over shows Time Survived in hh:mm:ss with pulsing animation (`GameOver/TimeSurvived`)
   - camera centers on active cell with smoothed follow
+  - boost orbs (`src/presentation/world/BoostOrb.gd`) spawn when any combatant dies:
+    - types: XP, weapon-specific ammo, health
+    - ammo orb color maps to weapon color (laser cyan, stun green, homing orange, spread purple)
+    - orb value scales with victim value (survival time + credits + cell count), with capped visual diameter
+    - both player and AI can consume; if full/capped, touching still invalidates orb (CRT-style collapse/fade)
+    - health orb renders `+`, XP orb renders `$`
+    - lifetime: 20s
 
 Rendering:
 - 2D MSAA enabled in `project.godot` (`anti_aliasing/quality/msaa_2d=3`)
