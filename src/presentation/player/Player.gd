@@ -58,6 +58,7 @@ var critical_sfx_timer: float = 0.0
 var critical_sfx_armed: bool = true
 var event_audio_loaded: bool = false
 var critical_sfx: AudioStream = null
+var survival_time: float = 0.0
 
 var move_command: Vector2 = Vector2.ZERO
 var expand_command: bool = false
@@ -91,6 +92,7 @@ func _process(delta: float) -> void:
 		_update_death_fx(delta)
 		queue_redraw()
 		return
+	survival_time += delta
 	if spawn_timer > 0.0:
 		spawn_timer = maxf(spawn_timer - delta, 0.0)
 		var t := _get_spawn_t()
@@ -345,6 +347,9 @@ func _compute_kill_reward() -> float:
 	if world != null and world.has_method("get_kill_reward_multiplier"):
 		reward *= float(world.get_kill_reward_multiplier())
 	return reward
+
+func get_survival_time() -> float:
+	return survival_time
 
 func local_to_grid(v: Vector2) -> Vector2i:
 	return shape.local_to_grid(v)

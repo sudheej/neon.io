@@ -1,6 +1,7 @@
 extends Node2D
 
 const WeaponSlot = preload("res://src/domain/weapons/WeaponSlot.gd")
+const BoostOrbScript = preload("res://src/presentation/world/BoostOrb.gd")
 
 const ENEMY_START: int = 5
 const ENEMY_SPAWN_RADIUS: float = 260.0
@@ -16,6 +17,17 @@ const TELEMETRY_INTERVAL: float = 10.0
 const LOW_HEALTH_THRESHOLD: float = 0.4
 const LOW_HEALTH_HYSTERESIS: float = 0.005
 const LOW_HEALTH_BANNER_DURATION: float = 1.2
+const ORB_MIN_XP: float = 4.0
+const ORB_MAX_XP: float = 34.0
+const ORB_MIN_HEALTH: float = 3.0
+const ORB_MAX_HEALTH: float = 20.0
+const ORB_MIN_AMMO: int = 2
+const ORB_MAX_AMMO: int = 18
+const ORB_SURVIVAL_BONUS_RATE: float = 0.12
+const ORB_SURVIVAL_BONUS_MAX: float = 14.0
+const ORB_CREDIT_BONUS_RATE: float = 0.04
+const ORB_CREDIT_BONUS_MAX: float = 10.0
+const ORB_CELL_BONUS: float = 1.8
 const PlayerScene = preload("res://src/presentation/scenes/Player.tscn")
 const AIControllerScript = preload("res://src/input/AIInputSource.gd")
 
@@ -38,6 +50,7 @@ var low_health_banner_timer: float = 0.0
 @onready var low_health_banner = $HUD/LowHealthBanner
 @onready var game_over_layer: CanvasLayer = $GameOver
 @onready var game_over_time: Label = $GameOver/TimeSurvived
+@onready var boost_orbs_root: Node2D = $BoostOrbs
 
 func _ready() -> void:
 	add_to_group("world")
@@ -47,6 +60,7 @@ func _ready() -> void:
 		telemetry_enabled = false
 	if player != null and player.has_signal("died"):
 		player.died.connect(_on_player_died)
+		player.died.connect(_on_combatant_died)
 	_maybe_schedule_hud_screenshot()
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -76,6 +90,7 @@ func _process(delta: float) -> void:
 			telemetry_timer = TELEMETRY_INTERVAL
 			_log_telemetry(combatants)
 	_process_combatants(delta, combatants)
+	_process_boost_orbs(combatants)
 	_update_hud(combatants)
 	_update_announcements(delta)
 	_maybe_spawn_enemy(delta, combatants.size() - 1)
@@ -143,6 +158,8 @@ func _spawn_enemy() -> void:
 	enemies_root.add_child(enemy)
 	if enemy.has_method("set_ai_enabled"):
 		enemy.set_ai_enabled(true)
+	if enemy.has_signal("died"):
+		enemy.died.connect(_on_combatant_died)
 
 func _maybe_spawn_enemy(delta: float, enemy_count: int) -> void:
 	spawn_timer -= delta
@@ -197,6 +214,9 @@ func _on_player_died(_victim: Node) -> void:
 	if game_over_layer != null:
 		game_over_layer.visible = true
 	_update_game_over_time()
+
+func _on_combatant_died(victim: Node) -> void:
+	_spawn_boost_orb(victim)
 
 func _update_game_over_time() -> void:
 	if game_over_time == null:
@@ -306,3 +326,83 @@ func _update_announcements(delta: float) -> void:
 			if low_health_banner.has_method("hide_announcement"):
 				low_health_banner.hide_announcement()
 				low_health_banner_timer = 0.0
+
+func _process_boost_orbs(combatants: Array[Node]) -> void:
+	if boost_orbs_root == null:
+		return
+	for child in boost_orbs_root.get_children():
+		var orb = child as Node2D
+		if orb == null or not is_instance_valid(orb):
+			continue
+		if not orb.has_method("try_consume") or not orb.has_method("is_entity_in_pickup_range"):
+			continue
+		for entity in combatants:
+			var node = entity as Node2D
+			if node == null or not is_instance_valid(node):
+				continue
+			if bool(node.get("is_dying")):
+				continue
+			if not bool(orb.is_entity_in_pickup_range(node)):
+				continue
+			orb.try_consume(node, true)
+			if not is_instance_valid(orb):
+				break
+
+func _spawn_boost_orb(victim: Node) -> void:
+	if boost_orbs_root == null:
+		return
+	var victim_node = victim as Node2D
+	if victim_node == null or not is_instance_valid(victim_node):
+		return
+	var orb = BoostOrbScript.new()
+	var boost_type = randi() % 3
+	var amount = _compute_orb_value(victim, boost_type)
+	var weapon_type = WeaponSlot.WeaponType.LASER
+	if boost_type == BoostOrbScript.BoostType.AMMO:
+		var weapon_pool = [
+			WeaponSlot.WeaponType.LASER,
+			WeaponSlot.WeaponType.STUN,
+			WeaponSlot.WeaponType.HOMING,
+			WeaponSlot.WeaponType.SPREAD
+		]
+		weapon_type = weapon_pool[randi() % weapon_pool.size()]
+	orb.configure(boost_type, amount, weapon_type)
+	orb.global_position = victim_node.global_position
+	boost_orbs_root.add_child(orb)
+
+func _compute_orb_value(victim: Node, boost_type: int) -> float:
+	var survival = 0.0
+	if victim.has_method("get_survival_time"):
+		survival = float(victim.get_survival_time())
+	var credits = 0.0
+	var victim_xp = victim.get("xp")
+	if victim_xp != null:
+		credits = float(victim_xp)
+	var cells = 1
+	if victim.has_node("PlayerShape"):
+		var shape = victim.get_node("PlayerShape")
+		if shape != null:
+			var shape_cells = shape.get("cells")
+			if shape_cells is Dictionary:
+				cells = max(1, (shape_cells as Dictionary).size())
+	var base = 0.0
+	match boost_type:
+		BoostOrbScript.BoostType.XP:
+			base = ORB_MIN_XP
+		BoostOrbScript.BoostType.AMMO:
+			base = float(ORB_MIN_AMMO)
+		BoostOrbScript.BoostType.HEALTH:
+			base = ORB_MIN_HEALTH
+	var survival_bonus = minf(survival * ORB_SURVIVAL_BONUS_RATE, ORB_SURVIVAL_BONUS_MAX)
+	var credit_bonus = minf(credits * ORB_CREDIT_BONUS_RATE, ORB_CREDIT_BONUS_MAX)
+	var cell_bonus = float(max(0, cells - 1)) * ORB_CELL_BONUS
+	var total = base + survival_bonus + credit_bonus + cell_bonus
+	match boost_type:
+		BoostOrbScript.BoostType.XP:
+			return clampf(total, ORB_MIN_XP, ORB_MAX_XP)
+		BoostOrbScript.BoostType.AMMO:
+			return float(clampi(int(round(total)), ORB_MIN_AMMO, ORB_MAX_AMMO))
+		BoostOrbScript.BoostType.HEALTH:
+			return clampf(total, ORB_MIN_HEALTH, ORB_MAX_HEALTH)
+		_:
+			return ORB_MIN_XP
