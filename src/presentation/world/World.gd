@@ -299,10 +299,10 @@ func _update_announcements(delta: float) -> void:
 			low_health_alert_active = true
 			if low_health_banner.has_method("show_announcement"):
 				low_health_banner.show_announcement("LOW HEALTH")
-			low_health_banner_timer = LOW_HEALTH_BANNER_DURATION
+				low_health_banner_timer = LOW_HEALTH_BANNER_DURATION
 	elif ratio >= LOW_HEALTH_THRESHOLD + LOW_HEALTH_HYSTERESIS:
 		if low_health_alert_active:
 			low_health_alert_active = false
 			if low_health_banner.has_method("hide_announcement"):
 				low_health_banner.hide_announcement()
-			low_health_banner_timer = 0.0
+				low_health_banner_timer = 0.0

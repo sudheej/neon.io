@@ -567,7 +567,6 @@ func _should_play_selection_sfx() -> bool:
 	if player == null or not is_instance_valid(player):
 		return false
 	return player.is_in_group("player")
-
 func _load_imported_audio(source_path: String) -> AudioStream:
 	var import_path := source_path + ".import"
 	var cfg := ConfigFile.new()
