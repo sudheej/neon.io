@@ -15,6 +15,7 @@ const KILL_REWARD_DANGER_MULT: float = 1.35
 const TELEMETRY_INTERVAL: float = 10.0
 const LOW_HEALTH_THRESHOLD: float = 0.4
 const LOW_HEALTH_HYSTERESIS: float = 0.005
+const LOW_HEALTH_BANNER_DURATION: float = 1.2
 const PlayerScene = preload("res://src/presentation/scenes/Player.tscn")
 const AIControllerScript = preload("res://src/input/AIInputSource.gd")
 
@@ -28,6 +29,7 @@ var camera_follow_speed: float = 6.0
 var telemetry_enabled: bool = true
 var telemetry_timer: float = TELEMETRY_INTERVAL
 var low_health_alert_active: bool = false
+var low_health_banner_timer: float = 0.0
 
 @onready var player = $Player
 @onready var enemies_root = $Enemies
@@ -75,7 +77,7 @@ func _process(delta: float) -> void:
 			_log_telemetry(combatants)
 	_process_combatants(delta, combatants)
 	_update_hud(combatants)
-	_update_announcements()
+	_update_announcements(delta)
 	_maybe_spawn_enemy(delta, combatants.size() - 1)
 
 func _get_combatants() -> Array[Node]:
@@ -278,11 +280,15 @@ func _weapon_usage_text() -> String:
 	var spread = int(usage.get(WeaponSlot.WeaponType.SPREAD, 0))
 	return "laser:%d stun:%d homing:%d spread:%d" % [laser, stun, homing, spread]
 
-func _update_announcements() -> void:
+func _update_announcements(delta: float) -> void:
 	if player == null or not is_instance_valid(player):
 		return
 	if low_health_banner == null:
 		return
+	if low_health_banner_timer > 0.0:
+		low_health_banner_timer = maxf(low_health_banner_timer - delta, 0.0)
+		if low_health_banner_timer <= 0.0 and low_health_banner.has_method("hide_announcement"):
+			low_health_banner.hide_announcement()
 	var max_hp = float(player.get("max_health"))
 	if max_hp <= 0.0:
 		return
@@ -293,8 +299,10 @@ func _update_announcements() -> void:
 			low_health_alert_active = true
 			if low_health_banner.has_method("show_announcement"):
 				low_health_banner.show_announcement("LOW HEALTH")
+				low_health_banner_timer = LOW_HEALTH_BANNER_DURATION
 	elif ratio >= LOW_HEALTH_THRESHOLD + LOW_HEALTH_HYSTERESIS:
 		if low_health_alert_active:
 			low_health_alert_active = false
 			if low_health_banner.has_method("hide_announcement"):
 				low_health_banner.hide_announcement()
+				low_health_banner_timer = 0.0
