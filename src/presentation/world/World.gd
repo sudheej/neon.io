@@ -10,6 +10,10 @@ const ACTION_SPAWN_CHANCE: float = 0.55
 const PLAYER_FAR_SPAWN_CHANCE: float = 0.45
 const ACTION_SPAWN_MIN_RADIUS: float = 84.0
 const ACTION_SPAWN_MAX_RADIUS: float = 240.0
+const ACTION_ANCHOR_MIN_PLAYER_DIST: float = 150.0
+const PLAYER_EXCLUSION_RADIUS_EARLY: float = 250.0
+const PLAYER_EXCLUSION_RADIUS_LATE: float = 155.0
+const PLAYER_EXCLUSION_BLEND_TIME: float = 60.0
 const MAX_ENEMIES: int = 16
 const SPAWN_INTERVAL: float = 2.2
 const SURGE_CYCLE_SECONDS: float = 36.0
@@ -131,22 +135,34 @@ func _spawn_enemy() -> void:
 	if player.has_method("get_collision_radius"):
 		player_radius = float(player.get_collision_radius())
 	var combatants = _get_combatants()
+	var enemy_count = max(combatants.size() - 1, 0)
+	var min_player_dist = _current_player_spawn_exclusion(enemy_count)
 	var anchor = player.global_position
 	var min_radius = maxf(120.0, player_radius + enemy_radius + 12.0)
 	var max_radius = ENEMY_SPAWN_RADIUS
 	if randf() < ACTION_SPAWN_CHANCE:
-		anchor = _pick_action_spawn_anchor(combatants)
-		if anchor.distance_to(player.global_position) > 1.0:
+		var action_anchor = _pick_action_spawn_anchor(combatants)
+		if action_anchor.distance_to(player.global_position) >= ACTION_ANCHOR_MIN_PLAYER_DIST:
+			anchor = action_anchor
 			min_radius = maxf(ACTION_SPAWN_MIN_RADIUS, enemy_radius + 10.0)
 			max_radius = ACTION_SPAWN_MAX_RADIUS
 	if anchor.distance_to(player.global_position) <= 1.0 and randf() < PLAYER_FAR_SPAWN_CHANCE:
 		min_radius = maxf(min_radius, 185.0)
 		max_radius = ENEMY_SPAWN_RADIUS_FAR
+	if anchor.distance_to(player.global_position) <= 1.0:
+		min_radius = maxf(min_radius, min_player_dist)
+		max_radius = maxf(max_radius, min_radius + 36.0)
 	var pos = anchor
+	var found_valid = false
+	var fallback_any_pos = anchor
+	var fallback_any_dist = -INF
+	var fallback_safe_pos = anchor
+	var fallback_safe_dist = -INF
 	for _i in range(12):
 		var angle = randf_range(0.0, TAU)
 		var radius = randf_range(min_radius, max_radius)
 		var candidate = anchor + Vector2(cos(angle), sin(angle)) * radius
+		var player_dist = candidate.distance_to(player.global_position)
 		var ok = true
 		for entity in combatants:
 			var node = entity as Node2D
@@ -155,13 +171,26 @@ func _spawn_enemy() -> void:
 			var other_radius = 16.0
 			if node.has_method("get_collision_radius"):
 				other_radius = float(node.get_collision_radius())
-			if candidate.distance_to(node.global_position) < (other_radius + enemy_radius + 8.0):
-				ok = false
-				break
+				if candidate.distance_to(node.global_position) < (other_radius + enemy_radius + 8.0):
+					ok = false
+					break
+		if ok and player_dist > fallback_safe_dist:
+			fallback_safe_dist = player_dist
+			fallback_safe_pos = candidate
+		if player_dist > fallback_any_dist:
+			fallback_any_dist = player_dist
+			fallback_any_pos = candidate
+		if player_dist < min_player_dist:
+			continue
 		if ok:
 			pos = candidate
+			found_valid = true
 			break
-		pos = candidate
+	if not found_valid:
+		if fallback_safe_dist > -INF:
+			pos = fallback_safe_pos
+		elif fallback_any_dist > -INF:
+			pos = fallback_any_pos
 	enemy.global_position = pos
 	var ai = AIControllerScript.new()
 	var game_world = get_tree().get_first_node_in_group("game_world")
@@ -175,6 +204,15 @@ func _spawn_enemy() -> void:
 		enemy.set_ai_enabled(true)
 	if enemy.has_signal("died"):
 		enemy.died.connect(_on_combatant_died)
+
+func _current_player_spawn_exclusion(enemy_count: int) -> float:
+	var t = clampf(elapsed / PLAYER_EXCLUSION_BLEND_TIME, 0.0, 1.0)
+	var dist = lerpf(PLAYER_EXCLUSION_RADIUS_EARLY, PLAYER_EXCLUSION_RADIUS_LATE, t)
+	if enemy_count < ENEMY_START:
+		dist += 18.0
+	if _is_surge_active():
+		dist *= 0.9
+	return dist
 
 func _pick_action_spawn_anchor(combatants: Array[Node]) -> Vector2:
 	if boost_orbs_root != null and boost_orbs_root.get_child_count() > 0 and randf() < 0.45:
