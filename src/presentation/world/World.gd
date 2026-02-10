@@ -37,6 +37,16 @@ const ORB_SURVIVAL_BONUS_MAX: float = 14.0
 const ORB_CREDIT_BONUS_RATE: float = 0.04
 const ORB_CREDIT_BONUS_MAX: float = 10.0
 const ORB_CELL_BONUS: float = 1.8
+const LEADER_CHECK_INTERVAL: float = 0.35
+const STREAK_BANNER_DURATION: float = 1.45
+const STREAK_CHAIN_GAP_SECONDS: float = 2.1
+const STREAK_ANNOUNCE_MIN_TIME: float = 14.0
+const STREAK_ANNOUNCE_MIN_ENEMIES: int = 3
+const LEADERBOARD_CONTEST_MIN_TIME: float = 22.0
+const LEADERBOARD_CONTEST_MIN_ENEMIES: int = 4
+const LEADERBOARD_CONTEST_UNLOCK_MAX_RANK: int = 3
+const AWESOME_SFX_PATH: String = "res://assets/audio/ui/awesome.wav"
+const MESSAGE_SFX_PATH: String = "res://assets/audio/ui/message.wav"
 const PlayerScene = preload("res://src/presentation/scenes/Player.tscn")
 const AIControllerScript = preload("res://src/input/AIInputSource.gd")
 
@@ -51,6 +61,19 @@ var telemetry_enabled: bool = true
 var telemetry_timer: float = TELEMETRY_INTERVAL
 var low_health_alert_active: bool = false
 var low_health_banner_timer: float = 0.0
+var general_announcement_timer: float = 0.0
+var pending_general_text: String = ""
+var pending_general_sfx: AudioStream = null
+var pending_general_volume_db: float = -4.0
+var leaderboard_timer: float = 0.0
+var player_is_leader: bool = false
+var leaderboard_contest_unlocked: bool = false
+var leaderboard_state_ready: bool = false
+var streak_chain_by_id: Dictionary = {}
+var last_kill_time_by_id: Dictionary = {}
+var awesome_sfx: AudioStream = null
+var message_sfx: AudioStream = null
+var event_audio_loaded: bool = false
 
 @onready var player = $Player
 @onready var enemies_root = $Enemies
@@ -70,6 +93,7 @@ func _ready() -> void:
 	if player != null and player.has_signal("died"):
 		player.died.connect(_on_player_died)
 		player.died.connect(_on_combatant_died)
+	_ensure_event_audio_loaded()
 	_maybe_schedule_hud_screenshot()
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -101,6 +125,7 @@ func _process(delta: float) -> void:
 	_process_combatants(delta, combatants)
 	_process_boost_orbs(combatants)
 	_update_hud(combatants)
+	_update_leaderboard(delta, combatants)
 	_update_announcements(delta)
 	_maybe_spawn_enemy(delta, combatants.size() - 1)
 
@@ -281,6 +306,7 @@ func _on_player_died(_victim: Node) -> void:
 	game_over_pulse = 0.0
 	if low_health_banner != null and low_health_banner.has_method("hide_announcement"):
 		low_health_banner.hide_announcement()
+	pending_general_text = ""
 	if telemetry_enabled:
 		_log_telemetry(_get_combatants())
 		_log_telemetry_summary()
@@ -289,6 +315,7 @@ func _on_player_died(_victim: Node) -> void:
 	_update_game_over_time()
 
 func _on_combatant_died(victim: Node) -> void:
+	_handle_kill_achievements(victim)
 	_spawn_boost_orb(victim)
 
 func _update_game_over_time() -> void:
@@ -382,6 +409,10 @@ func _update_announcements(delta: float) -> void:
 		low_health_banner_timer = maxf(low_health_banner_timer - delta, 0.0)
 		if low_health_banner_timer <= 0.0 and low_health_banner.has_method("hide_announcement"):
 			low_health_banner.hide_announcement()
+	if general_announcement_timer > 0.0:
+		general_announcement_timer = maxf(general_announcement_timer - delta, 0.0)
+		if general_announcement_timer <= 0.0 and not low_health_alert_active and low_health_banner.has_method("hide_announcement"):
+			low_health_banner.hide_announcement()
 	var max_hp = float(player.get("max_health"))
 	if max_hp <= 0.0:
 		return
@@ -399,6 +430,203 @@ func _update_announcements(delta: float) -> void:
 			if low_health_banner.has_method("hide_announcement"):
 				low_health_banner.hide_announcement()
 				low_health_banner_timer = 0.0
+		if not pending_general_text.is_empty():
+			_show_general_announcement(pending_general_text, pending_general_sfx, pending_general_volume_db)
+			pending_general_text = ""
+			pending_general_sfx = null
+
+func _update_leaderboard(delta: float, combatants: Array[Node]) -> void:
+	if player == null or not is_instance_valid(player):
+		return
+	leaderboard_timer -= delta
+	if leaderboard_timer > 0.0:
+		return
+	leaderboard_timer = LEADER_CHECK_INTERVAL
+	var enemy_count = max(combatants.size() - 1, 0)
+	if not leaderboard_contest_unlocked:
+		if elapsed < LEADERBOARD_CONTEST_MIN_TIME:
+			return
+		if enemy_count < LEADERBOARD_CONTEST_MIN_ENEMIES:
+			return
+		var rank = _get_player_rank(combatants)
+		if rank > LEADERBOARD_CONTEST_UNLOCK_MAX_RANK:
+			return
+		leaderboard_contest_unlocked = true
+	if not leaderboard_state_ready:
+		player_is_leader = (_pick_leader(combatants) == player)
+		leaderboard_state_ready = true
+		return
+	var leader = _pick_leader(combatants)
+	var player_now_leads = leader == player
+	if player_now_leads and not player_is_leader:
+		player_is_leader = true
+		_show_general_announcement("LEADER", awesome_sfx, -4.0)
+	elif not player_now_leads and player_is_leader:
+		player_is_leader = false
+		_show_general_announcement("LOST THE LEAD", message_sfx, -5.0)
+
+func _pick_leader(combatants: Array[Node]) -> Node:
+	var best: Node = null
+	var best_score := -INF
+	for entity in combatants:
+		var node = entity as Node
+		if node == null or not is_instance_valid(node):
+			continue
+		if bool(node.get("is_dying")):
+			continue
+		var score = _leaderboard_score(node)
+		if score > best_score:
+			best_score = score
+			best = node
+	return best
+
+func _leaderboard_score(entity: Node) -> float:
+	var xp = float(entity.get("xp"))
+	var survival = 0.0
+	if entity.has_method("get_survival_time"):
+		survival = float(entity.get_survival_time())
+	var cells = 1
+	if entity.has_node("PlayerShape"):
+		var shape = entity.get_node("PlayerShape")
+		if shape != null:
+			var shape_cells = shape.get("cells")
+			if shape_cells is Dictionary:
+				cells = max(1, (shape_cells as Dictionary).size())
+	return xp + float(cells - 1) * 35.0 + survival * 0.08
+
+func _get_player_rank(combatants: Array[Node]) -> int:
+	if player == null or not is_instance_valid(player):
+		return 999
+	var player_score = _leaderboard_score(player)
+	var better_count = 0
+	for entity in combatants:
+		var node = entity as Node
+		if node == null or not is_instance_valid(node):
+			continue
+		if node == player or bool(node.get("is_dying")):
+			continue
+		if _leaderboard_score(node) > player_score:
+			better_count += 1
+	return better_count + 1
+
+func _handle_kill_achievements(victim: Node) -> void:
+	if player == null or not is_instance_valid(player):
+		return
+	if victim == null or not is_instance_valid(victim):
+		return
+	var killer = victim.get("last_damage_source")
+	if killer == null or not is_instance_valid(killer):
+		return
+	if killer == victim:
+		return
+	if not killer.is_in_group("combatants"):
+		return
+
+	var killer_id = killer.get_instance_id()
+	var kill_gap = elapsed - float(last_kill_time_by_id.get(killer_id, -INF))
+	var chain = 1
+	if kill_gap <= STREAK_CHAIN_GAP_SECONDS:
+		chain = int(streak_chain_by_id.get(killer_id, 0)) + 1
+	streak_chain_by_id[killer_id] = chain
+	last_kill_time_by_id[killer_id] = elapsed
+
+	if elapsed < STREAK_ANNOUNCE_MIN_TIME:
+		return
+	if _alive_enemy_count() < STREAK_ANNOUNCE_MIN_ENEMIES:
+		return
+
+	if chain <= 1:
+		return
+	var title_data = _get_streak_title_data(chain)
+	if title_data.is_empty():
+		return
+	var bonus_xp = float(title_data["bonus_xp"])
+	if killer.has_method("on_achievement_reward"):
+		killer.on_achievement_reward(bonus_xp)
+	elif killer.has_method("add_xp"):
+		killer.add_xp(bonus_xp)
+	if killer == player:
+		_show_general_announcement("%s  +%d XP" % [String(title_data["title"]), int(title_data["bonus_xp"])], awesome_sfx, -4.0)
+
+func _alive_enemy_count() -> int:
+	var count = 0
+	for entity in _get_combatants():
+		var node = entity as Node
+		if node == null or not is_instance_valid(node):
+			continue
+		if node == player:
+			continue
+		if bool(node.get("is_dying")):
+			continue
+		count += 1
+	return count
+
+func _get_streak_title_data(chain: int) -> Dictionary:
+	var tiers = [
+		{"chain": 2, "title": "DOUBLE KILL", "bonus_xp": 5},
+		{"chain": 3, "title": "KILLING SPREE", "bonus_xp": 10},
+		{"chain": 4, "title": "DOMINATING", "bonus_xp": 16},
+		{"chain": 5, "title": "RAMPAGE", "bonus_xp": 24},
+		{"chain": 6, "title": "UNSTOPPABLE", "bonus_xp": 34},
+		{"chain": 7, "title": "IMMORTAL", "bonus_xp": 46},
+		{"chain": 8, "title": "GODLIKE", "bonus_xp": 60},
+		{"chain": 10, "title": "BEAST MODE", "bonus_xp": 80}
+	]
+	for tier in tiers:
+		if chain == int(tier["chain"]):
+			return tier
+	if chain > 10 and chain % 2 == 0:
+		var extra_steps = int((chain - 10) / 2)
+		return {
+			"chain": chain,
+			"title": "BEYOND GODLIKE x%d" % (extra_steps + 1),
+			"bonus_xp": min(80 + extra_steps * 12, 160)
+		}
+	return {}
+
+func _show_general_announcement(message: String, sfx: AudioStream, volume_db: float) -> void:
+	if low_health_banner == null or not low_health_banner.has_method("show_announcement"):
+		return
+	if low_health_alert_active:
+		pending_general_text = message
+		pending_general_sfx = sfx
+		pending_general_volume_db = volume_db
+		return
+	low_health_banner.show_announcement(message)
+	general_announcement_timer = STREAK_BANNER_DURATION
+	_play_event_sfx(sfx, volume_db)
+
+func _play_event_sfx(stream: AudioStream, volume_db: float) -> void:
+	if stream == null:
+		return
+	var audio := AudioStreamPlayer.new()
+	audio.stream = stream
+	audio.volume_db = volume_db
+	audio.pitch_scale = 1.0
+	add_child(audio)
+	audio.play()
+	audio.finished.connect(audio.queue_free)
+
+func _ensure_event_audio_loaded() -> void:
+	if event_audio_loaded:
+		return
+	event_audio_loaded = true
+	awesome_sfx = _load_imported_audio(AWESOME_SFX_PATH)
+	if awesome_sfx == null:
+		awesome_sfx = ResourceLoader.load(AWESOME_SFX_PATH) as AudioStream
+	message_sfx = _load_imported_audio(MESSAGE_SFX_PATH)
+	if message_sfx == null:
+		message_sfx = ResourceLoader.load(MESSAGE_SFX_PATH) as AudioStream
+
+func _load_imported_audio(source_path: String) -> AudioStream:
+	var import_path := source_path + ".import"
+	var cfg := ConfigFile.new()
+	if cfg.load(import_path) != OK:
+		return null
+	var remap_path := cfg.get_value("remap", "path", "") as String
+	if remap_path.is_empty():
+		return null
+	return ResourceLoader.load(remap_path) as AudioStream
 
 func _process_boost_orbs(combatants: Array[Node]) -> void:
 	if boost_orbs_root == null:
