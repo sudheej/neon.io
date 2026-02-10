@@ -59,6 +59,9 @@ var critical_sfx_armed: bool = true
 var event_audio_loaded: bool = false
 var critical_sfx: AudioStream = null
 var survival_time: float = 0.0
+var last_damage_source: Node = null
+var reward_glow_timer: float = 0.0
+var reward_glow_strength: float = 0.0
 
 var move_command: Vector2 = Vector2.ZERO
 var expand_command: bool = false
@@ -134,6 +137,10 @@ func _process(delta: float) -> void:
 	if damage_blink_timer > 0.0:
 		damage_blink_timer = maxf(damage_blink_timer - delta, 0.0)
 		damage_blink_phase = fmod(damage_blink_phase + delta * 22.0, TAU)
+	if reward_glow_timer > 0.0:
+		reward_glow_timer = maxf(reward_glow_timer - delta, 0.0)
+	elif reward_glow_strength > 0.0:
+		reward_glow_strength = maxf(reward_glow_strength - delta * 1.8, 0.0)
 	if debug_collision and debug_collision_print_timer > 0.0:
 		debug_collision_print_timer = maxf(debug_collision_print_timer - delta, 0.0)
 
@@ -215,6 +222,12 @@ func _update_commands() -> void:
 
 func add_xp(amount: float) -> void:
 	xp += amount
+
+func on_achievement_reward(amount: float) -> void:
+	add_xp(amount)
+	var normalized = clampf(amount / 80.0, 0.2, 1.0)
+	reward_glow_strength = maxf(reward_glow_strength, normalized)
+	reward_glow_timer = 1.05
 
 func award_kill_reward(base_reward: float) -> void:
 	var chain_next = combo_chain + 1 if combo_timer > 0.0 else 1
@@ -314,6 +327,7 @@ func set_ai_move_command(dir: Vector2) -> void:
 	ai_move = dir
 
 func apply_damage(amount: float, stun_duration: float, source: Node = null, weapon_type: int = -1) -> void:
+	last_damage_source = source
 	if not is_ai:
 		amount *= HUMAN_DAMAGE_MULTIPLIER
 	var armor_cells = 0
@@ -428,6 +442,11 @@ func _draw_cells() -> void:
 			border_color = border_color.lerp(blink_outline, blink_strength)
 		var border_width := 1.6 if grid_pos == armed_cell else 1.2
 		draw_rect(rect, border_color, false, border_width)
+		if reward_glow_strength > 0.0:
+			var pulse = 0.55 + 0.45 * sin(active_pulse_phase * 1.4)
+			var alpha = (0.08 + 0.14 * pulse) * reward_glow_strength
+			var glow_color = Color(0.98, 0.9, 0.45, alpha)
+			draw_rect(rect.grow(3.2), glow_color, false, 1.1 + 0.4 * reward_glow_strength)
 		if grid_pos == armed_cell:
 			var glow = Color(0.4, 0.95, 1.0, 0.32 + 0.28 * active_pulse)
 			draw_rect(rect.grow(2.5), glow, false, 1.2 + 0.9 * active_pulse)
