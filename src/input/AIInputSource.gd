@@ -33,6 +33,15 @@ const RETREAT_PRESSURE_EXIT: float = 0.42
 const RETREAT_MIN_TIME: float = 2.4
 const RETREAT_MAX_TIME: float = 4.6
 const RETREAT_REENGAGE_COOLDOWN: float = 2.2
+const GOAL_DECISION_INTERVAL: float = 0.42
+const GOAL_LOCK_MIN: float = 1.2
+const GOAL_LOCK_MAX: float = 2.6
+const CAMP_HOLD_RADIUS: float = 110.0
+const EXPAND_INTENT_MIN: float = 2.0
+const EXPAND_INTENT_MAX: float = 4.0
+const PRIORITY_TARGET_REFRESH_MIN: float = 0.5
+const PRIORITY_TARGET_REFRESH_MAX: float = 1.0
+const LEADER_THREAT_ENGAGE: float = 1.15
 
 static var _shared_expand_memory: Dictionary = {}
 
@@ -64,8 +73,34 @@ var last_reposition_timer: float = 0.0
 var retreat_mode: bool = false
 var retreat_timer: float = 0.0
 var retreat_cooldown: float = 0.0
+var persona: int = 0
+var current_goal: int = 0
+var goal_timer: float = 0.0
+var goal_decision_timer: float = 0.0
+var camp_anchor: Vector2 = Vector2.ZERO
+var camp_anchor_valid: bool = false
+var expand_intent_dir: Vector2i = Vector2i.ZERO
+var expand_intent_timer: float = 0.0
+var time_to_first_expand: float = -1.0
+var expansions_successful: int = 0
+var expansions_attempted: int = 0
+var no_expand_gap_max: float = 0.0
+var last_expand_time: float = 0.0
+var goal_time_split: Dictionary = {
+	"fight": 0.0,
+	"expand": 0.0,
+	"farm_orb": 0.0,
+	"retreat": 0.0,
+	"camp": 0.0,
+	"reposition": 0.0
+}
+var intent_interrupt_count: int = 0
+var priority_target: Node2D = null
+var priority_target_timer: float = 0.0
 
 enum AIProfile { BALANCED, LASER, STUNNER, HOMING, SPREADER }
+enum AIPersona { BLITZER, TURTLER, RAIDER, DUELIST, CONTROLLER }
+enum AIGoal { FIGHT, EXPAND, FARM_ORB, RETREAT, CAMP, REPOSITION }
 
 func _ready() -> void:
 	super._ready()
@@ -77,6 +112,8 @@ func _ready() -> void:
 		if id_val != null:
 			actor_id = String(id_val)
 	profile = randi() % 5
+	persona = randi() % 5
+	current_goal = AIGoal.FIGHT
 	aggressive_expander = _roll_aggressive_expander()
 	expansion_drive = randf_range(0.85, 1.2)
 	explore_before_expand_timer = randf_range(EXPAND_STARTUP_EXPLORE_MIN, EXPAND_STARTUP_EXPLORE_MAX)
@@ -84,22 +121,24 @@ func _ready() -> void:
 		explore_before_expand_timer *= 0.62
 	var angle_seed := randf_range(0.0, TAU)
 	preferred_axis = Vector2.RIGHT.rotated(angle_seed)
+	_apply_persona_seed()
+	if player != null:
+		camp_anchor = player.global_position
+		camp_anchor_valid = true
+	last_expand_time = _get_world_elapsed()
 
 func _process(delta: float) -> void:
 	if player == null or not is_instance_valid(player):
 		return
 	var targets = get_tree().get_nodes_in_group("combatants")
 	var pressure = _enemy_pressure(player, targets)
+	_update_priority_target(player, targets, delta)
 	_update_target(player, targets, delta)
 	var orb_target = _find_best_orb(player, targets)
 	_update_retreat_state(player, pressure, delta)
-	var move = Vector2.ZERO
-	if retreat_mode:
-		move += _compute_retreat_vector(player, targets)
-	else:
-		move += _compute_seek_vector(player, targets)
-	var orb_weight = 1.35 if retreat_mode else 1.0
-	move += _compute_orb_seek_vector(player, orb_target, targets) * orb_weight
+	_update_goal(player, targets, orb_target, pressure, delta)
+	_track_goal_time(delta)
+	var move = _compute_goal_vector(player, targets, orb_target)
 	move += _compute_separation_vector(player, targets)
 	move += _compute_dodge_vector(player) * 0.6
 	move *= _difficulty_scale()
@@ -107,6 +146,7 @@ func _process(delta: float) -> void:
 	_maybe_pick_weapon(player, targets, delta)
 	_set_preferred_target(player)
 	_maybe_expand(player, targets, orb_target, delta)
+	_update_no_expand_gap()
 
 func _compute_seek_vector(owner: Node2D, targets: Array) -> Vector2:
 	if current_target == null or not is_instance_valid(current_target):
@@ -151,20 +191,92 @@ func _update_target(owner: Node2D, targets: Array, delta: float) -> void:
 		return
 	current_target = null
 	var best_score = -1.0
+	var best_any_score = -INF
+	var best_any: Node2D = null
 	for t in targets:
 		var node = t as Node2D
 		if node == null or node == owner:
 			continue
 		var d = owner.global_position.distance_to(node.global_position)
+		var power = _target_power_score(node)
+		var any_score = power * _persona_hunt_weight()
+		if any_score > best_any_score:
+			best_any_score = any_score
+			best_any = node
 		if d > SEEK_RANGE:
 			continue
 		var score = 1.0 / max(d, 1.0)
+		score += power * 0.08 * _persona_hunt_weight()
 		if node.is_in_group("player"):
 			score *= 0.7
 		if score > best_score:
 			best_score = score
 			current_target = node
+	if current_target == null:
+		if priority_target != null and is_instance_valid(priority_target) and priority_target != owner:
+			current_target = priority_target
+		elif best_any != null and is_instance_valid(best_any):
+			current_target = best_any
 	target_timer = randf_range(0.8, 1.6)
+
+func _update_priority_target(owner: Node2D, targets: Array, delta: float) -> void:
+	priority_target_timer = maxf(priority_target_timer - delta, 0.0)
+	if priority_target != null and is_instance_valid(priority_target) and priority_target != owner and priority_target_timer > 0.0:
+		return
+	var best: Node2D = null
+	var best_power = -INF
+	for t in targets:
+		var node = t as Node2D
+		if node == null or node == owner:
+			continue
+		var power = _target_power_score(node)
+		if power > best_power:
+			best_power = power
+			best = node
+	priority_target = best
+	priority_target_timer = randf_range(PRIORITY_TARGET_REFRESH_MIN, PRIORITY_TARGET_REFRESH_MAX)
+
+func _target_power_score(node: Node2D) -> float:
+	var xp = _read_stat(node, "xp", 0.0)
+	var health_ratio = 1.0
+	var max_hp = maxf(_read_stat(node, "max_health", 1.0), 0.001)
+	var hp = _read_stat(node, "health", max_hp)
+	health_ratio = clampf(hp / max_hp, 0.0, 1.0)
+	var cells = float(_cell_count(node))
+	var survival = _read_stat(node, "survival_time", 0.0)
+	var score = xp * 0.02 + (cells - 1.0) * 0.6 + health_ratio * 0.9 + minf(survival / 120.0, 1.4)
+	if node.is_in_group("player"):
+		score += 0.25
+	return score
+
+func _persona_hunt_weight() -> float:
+	match persona:
+		AIPersona.BLITZER:
+			return 1.22
+		AIPersona.TURTLER:
+			return 0.7
+		AIPersona.RAIDER:
+			return 1.08
+		AIPersona.DUELIST:
+			return 1.3
+		AIPersona.CONTROLLER:
+			return 1.0
+		_:
+			return 1.0
+
+func _leader_hunt_urgency(owner: Node2D) -> float:
+	if priority_target == null or not is_instance_valid(priority_target):
+		return 0.0
+	if priority_target == owner:
+		return 0.0
+	var my_power = maxf(_target_power_score(owner), 0.01)
+	var leader_power = _target_power_score(priority_target)
+	var ratio = leader_power / my_power
+	if ratio < LEADER_THREAT_ENGAGE:
+		return 0.0
+	var dist = owner.global_position.distance_to(priority_target.global_position)
+	var reach = clampf(1.0 - dist / (SEEK_RANGE * 2.2), 0.0, 1.0)
+	return clampf((ratio - LEADER_THREAT_ENGAGE) * 0.7 + reach * 0.6, 0.0, 1.0)
 
 func _maybe_pick_weapon(owner: Node2D, targets: Array, _delta: float) -> void:
 	if not owner.has_node("WeaponSystem"):
@@ -381,12 +493,237 @@ func _health_ratio(owner: Node2D) -> float:
 	var max_hp = maxf(_read_stat(owner, "max_health", 1.0), 0.001)
 	return clampf(hp / max_hp, 0.0, 1.0)
 
+func _apply_persona_seed() -> void:
+	match persona:
+		AIPersona.BLITZER:
+			aggressive_expander = true
+			expansion_drive *= 1.25
+			explore_before_expand_timer *= 0.6
+		AIPersona.TURTLER:
+			expansion_drive *= 0.84
+			explore_before_expand_timer *= 1.15
+		AIPersona.RAIDER:
+			expansion_drive *= 0.93
+		AIPersona.DUELIST:
+			expansion_drive *= 1.0
+		AIPersona.CONTROLLER:
+			expansion_drive *= 1.08
+
+func _update_goal(owner: Node2D, targets: Array, orb_target: Node2D, pressure: float, delta: float) -> void:
+	goal_timer = maxf(goal_timer - delta, 0.0)
+	goal_decision_timer = maxf(goal_decision_timer - delta, 0.0)
+	if retreat_mode:
+		current_goal = AIGoal.RETREAT
+		goal_timer = 0.3
+		goal_decision_timer = GOAL_DECISION_INTERVAL
+		return
+	if goal_timer > 0.0 or goal_decision_timer > 0.0:
+		return
+	goal_decision_timer = GOAL_DECISION_INTERVAL * randf_range(0.85, 1.25)
+	var scores: Dictionary = {}
+	scores[AIGoal.FIGHT] = _score_goal_fight(owner, pressure)
+	scores[AIGoal.EXPAND] = _score_goal_expand(owner, pressure)
+	scores[AIGoal.FARM_ORB] = _score_goal_farm_orb(owner, orb_target, pressure)
+	scores[AIGoal.CAMP] = _score_goal_camp(owner, pressure)
+	scores[AIGoal.REPOSITION] = _score_goal_reposition(targets, pressure)
+	var hunt_urgency = _leader_hunt_urgency(owner)
+	if hunt_urgency > 0.0:
+		scores[AIGoal.FIGHT] = float(scores[AIGoal.FIGHT]) + hunt_urgency * (0.55 + _persona_hunt_weight() * 0.35)
+		scores[AIGoal.REPOSITION] = float(scores[AIGoal.REPOSITION]) + hunt_urgency * 0.24
+		scores[AIGoal.CAMP] = float(scores[AIGoal.CAMP]) - hunt_urgency * 0.45
+		scores[AIGoal.EXPAND] = float(scores[AIGoal.EXPAND]) - hunt_urgency * 0.22
+	var best_goal = current_goal
+	var best_score = -INF
+	for key in scores.keys():
+		var score = float(scores[key]) + _persona_goal_bias(int(key))
+		if score > best_score:
+			best_score = score
+			best_goal = int(key)
+	if best_goal != current_goal and current_goal == AIGoal.EXPAND and expand_intent_timer > 0.0:
+		intent_interrupt_count += 1
+	current_goal = best_goal
+	goal_timer = randf_range(GOAL_LOCK_MIN, GOAL_LOCK_MAX)
+	if current_goal == AIGoal.CAMP and (not camp_anchor_valid or owner.global_position.distance_to(camp_anchor) > CAMP_HOLD_RADIUS * 1.6):
+		camp_anchor = owner.global_position
+		camp_anchor_valid = true
+
+func _persona_goal_bias(goal: int) -> float:
+	match persona:
+		AIPersona.BLITZER:
+			if goal == AIGoal.EXPAND:
+				return 0.48
+			if goal == AIGoal.FIGHT:
+				return 0.16
+			if goal == AIGoal.CAMP:
+				return -0.22
+		AIPersona.TURTLER:
+			if goal == AIGoal.CAMP:
+				return 0.55
+			if goal == AIGoal.REPOSITION:
+				return 0.24
+			if goal == AIGoal.EXPAND:
+				return -0.08
+		AIPersona.RAIDER:
+			if goal == AIGoal.FARM_ORB:
+				return 0.4
+			if goal == AIGoal.FIGHT:
+				return 0.2
+		AIPersona.DUELIST:
+			if goal == AIGoal.FIGHT:
+				return 0.52
+			if goal == AIGoal.REPOSITION:
+				return 0.12
+		AIPersona.CONTROLLER:
+			if goal == AIGoal.EXPAND:
+				return 0.22
+			if goal == AIGoal.CAMP:
+				return 0.14
+			if goal == AIGoal.REPOSITION:
+				return 0.2
+	return 0.0
+
+func _score_goal_fight(owner: Node2D, pressure: float) -> float:
+	if current_target == null or not is_instance_valid(current_target):
+		return 0.08
+	var dist = owner.global_position.distance_to(current_target.global_position)
+	var range_score = clampf(1.0 - dist / SEEK_RANGE, 0.0, 1.0)
+	return 0.25 + range_score * 0.7 + pressure * 0.2
+
+func _score_goal_expand(owner: Node2D, pressure: float) -> float:
+	var open_dirs = _count_open_expand_dirs(owner)
+	if open_dirs <= 0:
+		return 0.0
+	var xp_now = _read_stat(owner, "xp", 0.0)
+	if xp_now < EXPAND_COST:
+		return 0.0
+	var cell_count = _cell_count(owner)
+	var elapsed = _get_world_elapsed()
+	var budget = _target_cell_budget(elapsed, pressure)
+	var missing = max(0, budget - cell_count)
+	var xp_factor = clampf((xp_now - EXPAND_COST) / 180.0, 0.0, 1.0)
+	var score = 0.15 + float(missing) * 0.22 + xp_factor * 0.24
+	score += (1.0 - pressure) * 0.24
+	return score
+
+func _score_goal_farm_orb(owner: Node2D, orb_target: Node2D, pressure: float) -> float:
+	if orb_target == null or not is_instance_valid(orb_target):
+		return 0.0
+	var dist = owner.global_position.distance_to(orb_target.global_position)
+	if dist > ORB_SEEK_RANGE:
+		return 0.0
+	var dist_score = clampf(1.0 - dist / ORB_SEEK_RANGE, 0.0, 1.0)
+	return 0.2 + dist_score * 0.66 + pressure * 0.08
+
+func _score_goal_camp(owner: Node2D, pressure: float) -> float:
+	var hp_ratio = _health_ratio(owner)
+	var hp_safe = clampf((hp_ratio - 0.35) / 0.65, 0.0, 1.0)
+	return 0.08 + hp_safe * 0.22 + (1.0 - pressure) * 0.16
+
+func _score_goal_reposition(targets: Array, pressure: float) -> float:
+	if targets.size() <= 1:
+		return 0.12
+	return 0.14 + pressure * 0.64
+
+func _compute_goal_vector(owner: Node2D, targets: Array, orb_target: Node2D) -> Vector2:
+	match current_goal:
+		AIGoal.RETREAT:
+			return _compute_retreat_vector(owner, targets)
+		AIGoal.EXPAND:
+			var setup = _compute_expand_setup_vector(owner, targets, orb_target)
+			var orb = _compute_orb_seek_vector(owner, orb_target, targets) * 0.55
+			return (setup + orb).normalized()
+		AIGoal.FARM_ORB:
+			var to_orb = _compute_orb_seek_vector(owner, orb_target, targets) * 1.35
+			var support = _compute_seek_vector(owner, targets) * 0.22
+			return (to_orb + support).normalized()
+		AIGoal.CAMP:
+			return _compute_camp_vector(owner, targets, orb_target)
+		AIGoal.REPOSITION:
+			return _compute_reposition_vector(owner, targets, orb_target)
+		_:
+			var seek = _compute_seek_vector(owner, targets)
+			var orb_vec = _compute_orb_seek_vector(owner, orb_target, targets) * 0.5
+			return (seek + orb_vec).normalized()
+
+func _compute_expand_setup_vector(owner: Node2D, targets: Array, orb_target: Node2D) -> Vector2:
+	var v = _compute_reposition_vector(owner, targets, orb_target) * 0.55
+	v += preferred_axis * 0.35
+	if orb_target != null and is_instance_valid(orb_target):
+		v += (orb_target.global_position - owner.global_position).normalized() * 0.22
+	if v.length_squared() <= 0.0001:
+		return preferred_axis
+	return v.normalized()
+
+func _compute_camp_vector(owner: Node2D, targets: Array, orb_target: Node2D) -> Vector2:
+	if not camp_anchor_valid:
+		camp_anchor = owner.global_position
+		camp_anchor_valid = true
+	var to_anchor = camp_anchor - owner.global_position
+	if to_anchor.length() > CAMP_HOLD_RADIUS:
+		return to_anchor.normalized()
+	var orbit = Vector2(-to_anchor.y, to_anchor.x).normalized() * 0.35
+	var support = _compute_seek_vector(owner, targets) * 0.22
+	var orb_watch = _compute_orb_seek_vector(owner, orb_target, targets) * 0.18
+	var move = orbit + support + orb_watch
+	if move.length_squared() <= 0.0001:
+		return Vector2.ZERO
+	return move.normalized()
+
+func _compute_reposition_vector(owner: Node2D, targets: Array, orb_target: Node2D) -> Vector2:
+	var retreat = _compute_retreat_vector(owner, targets) * 0.62
+	var seek = _compute_seek_vector(owner, targets) * 0.24
+	var orb = _compute_orb_seek_vector(owner, orb_target, targets) * 0.28
+	var move = retreat + seek + orb
+	if move.length_squared() <= 0.0001:
+		return preferred_axis
+	return move.normalized()
+
+func _track_goal_time(delta: float) -> void:
+	match current_goal:
+		AIGoal.FIGHT:
+			goal_time_split["fight"] = float(goal_time_split.get("fight", 0.0)) + delta
+		AIGoal.EXPAND:
+			goal_time_split["expand"] = float(goal_time_split.get("expand", 0.0)) + delta
+		AIGoal.FARM_ORB:
+			goal_time_split["farm_orb"] = float(goal_time_split.get("farm_orb", 0.0)) + delta
+		AIGoal.RETREAT:
+			goal_time_split["retreat"] = float(goal_time_split.get("retreat", 0.0)) + delta
+		AIGoal.CAMP:
+			goal_time_split["camp"] = float(goal_time_split.get("camp", 0.0)) + delta
+		AIGoal.REPOSITION:
+			goal_time_split["reposition"] = float(goal_time_split.get("reposition", 0.0)) + delta
+
+func _update_no_expand_gap() -> void:
+	var now = _get_world_elapsed()
+	var gap = maxf(now - last_expand_time, 0.0)
+	no_expand_gap_max = maxf(no_expand_gap_max, gap)
+
+func _count_open_expand_dirs(owner: Node2D) -> int:
+	var shape = owner.get_node_or_null("PlayerShape")
+	if shape == null:
+		return 0
+	if not owner.has_method("get_active_cell_grid_pos"):
+		return 0
+	var cells_data = shape.get("cells")
+	if not (cells_data is Dictionary):
+		return 0
+	var cells: Dictionary = cells_data
+	var active = owner.get_active_cell_grid_pos()
+	if not cells.has(active):
+		return 0
+	var count = 0
+	for dir in CARDINAL_DIRS:
+		if not cells.has(active + dir):
+			count += 1
+	return count
+
 func _maybe_expand(owner: Node2D, targets: Array, orb_target: Node2D, delta: float) -> void:
 	_update_expand_learning(owner, targets, delta)
 	explore_before_expand_timer = maxf(explore_before_expand_timer - delta, 0.0)
 	expand_decision_timer = maxf(expand_decision_timer - delta, 0.0)
 	expand_cooldown = maxf(expand_cooldown - delta, 0.0)
 	last_reposition_timer = maxf(last_reposition_timer - delta, 0.0)
+	expand_intent_timer = maxf(expand_intent_timer - delta, 0.0)
 	if expand_cooldown > 0.0:
 		return
 	if expand_decision_timer > 0.0:
@@ -433,6 +770,7 @@ func _maybe_expand(owner: Node2D, targets: Array, orb_target: Node2D, delta: flo
 	if explore_before_expand_timer > 0.0 and not _can_break_explore_window(owner, pressure, xp_orb_signal):
 		return
 	var desire = _expand_desire(owner, cell_count, pressure, orb_target, open_dirs.size(), xp_orb_signal)
+	desire *= _goal_expand_multiplier()
 	var force_growth = _should_force_growth(owner, pressure, open_dirs.size())
 	var should_grow = not open_dirs.is_empty() and (force_growth or randf() <= desire)
 	var candidate_dirs = open_dirs if should_grow else occupied_dirs
@@ -447,9 +785,12 @@ func _maybe_expand(owner: Node2D, targets: Array, orb_target: Node2D, delta: flo
 	if best_dir == Vector2i.ZERO:
 		return
 	emit_command(GameCommand.expand_direction(actor_id, best_dir))
+	expansions_attempted += 1
 	if should_grow:
 		if growth_lock_attempts_remaining > 0:
 			growth_lock_attempts_remaining -= 1
+		expand_intent_dir = best_dir
+		expand_intent_timer = randf_range(EXPAND_INTENT_MIN, EXPAND_INTENT_MAX)
 		_arm_expand_evaluation(owner, cell_count, pressure, context, best_dir)
 	else:
 		last_reposition_from = active
@@ -495,6 +836,19 @@ func _expand_desire(owner: Node2D, cell_count: int, pressure: float, orb_target:
 	if cell_count > budget:
 		desire *= 0.18
 	return clampf(desire, 0.0, 0.78)
+
+func _goal_expand_multiplier() -> float:
+	match current_goal:
+		AIGoal.EXPAND:
+			return 1.35
+		AIGoal.CAMP:
+			return 0.55
+		AIGoal.RETREAT:
+			return 0.2
+		AIGoal.FARM_ORB:
+			return 0.78
+		_:
+			return 1.0
 
 func _should_force_growth(owner: Node2D, pressure: float, open_dir_count: int) -> bool:
 	if open_dir_count <= 0:
@@ -663,6 +1017,11 @@ func _score_expand_dir(
 		score += dir_v.dot(to_orb) * 0.22
 	if growth_mode:
 		score += _frontier_growth_score(active + dir, cells, dir)
+		if expand_intent_timer > 0.0:
+			if dir == expand_intent_dir:
+				score += 0.26
+			else:
+				score -= 0.12
 	else:
 		score += 0.12
 		if last_reposition_timer > 0.0:
@@ -671,6 +1030,9 @@ func _score_expand_dir(
 				score -= 0.58
 			elif candidate_target == last_reposition_from:
 				score -= 0.22
+	var candidate_world = _grid_to_world(owner, active + dir)
+	var local_pressure = _pressure_at_point(candidate_world, owner)
+	score += (1.0 - local_pressure) * 0.24
 	score += randf_range(-0.05, 0.05)
 	return score
 
@@ -689,14 +1051,24 @@ func _profile_target_dir_weight(align: float) -> float:
 
 func _frontier_growth_score(target_cell: Vector2i, cells: Dictionary, dir: Vector2i) -> float:
 	var open_neighbors = 0
+	var second_ring = 0.0
 	for neighbor_dir in CARDINAL_DIRS:
-		if not cells.has(target_cell + neighbor_dir):
+		var n1 = target_cell + neighbor_dir
+		if not cells.has(n1):
 			open_neighbors += 1
+			var branch_open = 0
+			for n2_dir in CARDINAL_DIRS:
+				var n2 = n1 + n2_dir
+				if n2 == target_cell:
+					continue
+				if not cells.has(n2):
+					branch_open += 1
+			second_ring += float(branch_open) * 0.25
 	var center = _cells_center(cells)
 	var out_vec = (Vector2(target_cell) - center).normalized()
 	var dir_v = Vector2(dir.x, dir.y).normalized()
 	var outness = out_vec.dot(dir_v)
-	return float(open_neighbors) * 0.11 + outness * 0.24
+	return float(open_neighbors) * 0.1 + second_ring * 0.07 + outness * 0.22
 
 func _cells_center(cells: Dictionary) -> Vector2:
 	if cells.is_empty():
@@ -758,6 +1130,10 @@ func _update_expand_learning(owner: Node2D, targets: Array, delta: float) -> voi
 	if current_cells > pending_expand_before_cells:
 		growth_lock_attempts_remaining = 0
 		no_growth_timer = 0.0
+		expansions_successful += 1
+		if time_to_first_expand < 0.0:
+			time_to_first_expand = _get_world_elapsed()
+		last_expand_time = _get_world_elapsed()
 	var score = hp_delta * 1.0 + xp_delta * 0.4 + pressure_relief * 0.55 + growth_bonus
 	_update_shared_expand_score(pending_expand_context, pending_expand_dir, clampf(score, -0.35, 0.35))
 	_clear_pending_expand_eval()
@@ -797,3 +1173,33 @@ func _get_world_elapsed() -> float:
 	if world == null:
 		return 0.0
 	return _read_stat(world, "elapsed", 0.0)
+
+func _grid_to_world(owner: Node2D, grid_pos: Vector2i) -> Vector2:
+	var shape = owner.get_node_or_null("PlayerShape")
+	if shape != null and shape.has_method("grid_to_local"):
+		return owner.global_position + shape.grid_to_local(grid_pos)
+	return owner.global_position
+
+func _pressure_at_point(point: Vector2, owner: Node2D) -> float:
+	var pressure = 0.0
+	for entity in get_tree().get_nodes_in_group("combatants"):
+		var node = entity as Node2D
+		if node == null or node == owner:
+			continue
+		var dist = point.distance_to(node.global_position)
+		if dist > SEEK_RANGE:
+			continue
+		pressure += 1.0 - clampf(dist / SEEK_RANGE, 0.0, 1.0)
+	return clampf(pressure / 2.2, 0.0, 1.0)
+
+func get_ai_metrics() -> Dictionary:
+	return {
+		"persona": persona,
+		"profile": profile,
+		"time_to_first_expand": time_to_first_expand,
+		"expansions_attempted": expansions_attempted,
+		"expansions_successful": expansions_successful,
+		"no_expand_gap_max": no_expand_gap_max,
+		"intent_interrupt_count": intent_interrupt_count,
+		"goal_time_split": goal_time_split.duplicate(true)
+	}
