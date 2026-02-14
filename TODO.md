@@ -42,3 +42,21 @@
 - Show combo chain + bonus in HUD for short duration so bonus logic is understandable.
 - Show low-credit stipend tick in HUD (small text pulse) to avoid "hidden mechanic" feeling.
 - Color-shift health bar at critical threshold to align with critical audio timing.
+
+## AI Capability Roadmap (Future)
+
+### Phase 3 - Difficulty Matrix + Adaptive Control
+- Split difficulty into two axes:
+  - `competence` (planning horizon, target selection quality, timing),
+  - `execution` (reaction delay, noise, occasional mistakes, commitment quality).
+- Define clear tuning bands for `easy`, `normal`, `hard`, `adaptive`.
+- Add adaptive pacing controls that adjust pressure/intensity before buffing raw AI precision.
+- Ensure fairness guardrails:
+  - no omniscient tracking, bounded reaction times, and recoverable failure states for players.
+
+### Phase 4 - A/B Tuning + Validation
+- Run structured A/B playtests for persona mixes, planner weights, and difficulty matrices.
+- Compare versions using telemetry deltas:
+  - survival time distribution, expansions/minute, kill tempo, orb contest rate, perceived unfair deaths.
+- Promote only changes that improve both variety and fairness targets.
+- Produce a balancing report and lock a v1 AI behavior spec for follow-on feature work.

@@ -29,6 +29,7 @@ const COLLISION_PUSH_SCALE: float = 0.5
 const COLLISION_PLAYER_PUSH_SCALE: float = 0.22
 const COLLISION_AI_PUSH_SCALE: float = 0.55
 const COLLISION_PULSE_LIFE: float = 0.18
+const BOUNDARY_BOUNCE_DAMP: float = 0.32
 var velocity: Vector2 = Vector2.ZERO
 var xp: float = 250.0
 var expansions_bought: int = 0
@@ -172,6 +173,7 @@ func _physics_process(delta: float) -> void:
 		target_vel *= 0.35
 	velocity = velocity.lerp(target_vel, 1.0 - pow(0.001, delta * ACCEL))
 	global_position += velocity * delta
+	_apply_arena_boundary_collision()
 	if spawn_timer <= 0.0:
 		_apply_soft_collisions(delta)
 
@@ -656,6 +658,39 @@ func _apply_soft_collisions(_delta: float) -> void:
 			var pulse_pos = collision.get("self_pos", global_position - dir * my_radius)
 			_spawn_repel_pulse(pulse_pos)
 
+func _apply_arena_boundary_collision() -> void:
+	var world = get_tree().get_first_node_in_group("world")
+	if world == null:
+		return
+	var boundary = world.get_node_or_null("ArenaBoundary")
+	if boundary == null or not boundary.has_method("clamp_point"):
+		return
+	var previous = global_position
+	var clamped: Vector2
+	if boundary.has_method("clamp_point_extents"):
+		var extents = _get_collision_extents()
+		clamped = boundary.clamp_point_extents(
+			global_position,
+			float(extents.get("left", PlayerShapeScript.CELL_SIZE * 0.5)),
+			float(extents.get("right", PlayerShapeScript.CELL_SIZE * 0.5)),
+			float(extents.get("top", PlayerShapeScript.CELL_SIZE * 0.5)),
+			float(extents.get("bottom", PlayerShapeScript.CELL_SIZE * 0.5))
+		)
+	else:
+		var radius = _get_collision_radius()
+		clamped = boundary.clamp_point(global_position, radius)
+	if previous.distance_to(clamped) <= 0.001:
+		return
+	global_position = clamped
+	var x_clipped = absf(clamped.x - previous.x) > 0.001
+	var y_clipped = absf(clamped.y - previous.y) > 0.001
+	if x_clipped:
+		velocity.x = -velocity.x * BOUNDARY_BOUNCE_DAMP
+	if y_clipped:
+		velocity.y = -velocity.y * BOUNDARY_BOUNCE_DAMP
+	if previous.distance_to(clamped) > 0.2:
+		_spawn_repel_pulse(clamped)
+
 func _get_cell_collision(other: Node2D) -> Dictionary:
 	var result: Dictionary = {}
 	if shape == null:
@@ -716,6 +751,32 @@ func _get_collision_radius() -> float:
 		if dist > max_dist:
 			max_dist = dist
 	return max_dist
+
+func _get_collision_extents() -> Dictionary:
+	var half = PlayerShapeScript.CELL_SIZE * 0.5
+	if shape == null or shape.cells.is_empty():
+		return {
+			"left": half,
+			"right": half,
+			"top": half,
+			"bottom": half
+		}
+	var left := INF
+	var right := -INF
+	var top := INF
+	var bottom := -INF
+	for grid_pos in shape.cells.keys():
+		var local_pos = shape.grid_to_local(grid_pos)
+		left = minf(left, local_pos.x - half)
+		right = maxf(right, local_pos.x + half)
+		top = minf(top, local_pos.y - half)
+		bottom = maxf(bottom, local_pos.y + half)
+	return {
+		"left": maxf(0.0, -left),
+		"right": maxf(0.0, right),
+		"top": maxf(0.0, -top),
+		"bottom": maxf(0.0, bottom)
+	}
 
 func _spawn_repel_pulse(world_pos: Vector2) -> void:
 	if repel_pulses.size() > 10:

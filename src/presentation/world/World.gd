@@ -37,6 +37,7 @@ const ORB_SURVIVAL_BONUS_MAX: float = 14.0
 const ORB_CREDIT_BONUS_RATE: float = 0.04
 const ORB_CREDIT_BONUS_MAX: float = 10.0
 const ORB_CELL_BONUS: float = 1.8
+const ORB_BOUNDARY_PADDING: float = 16.0
 const LEADER_CHECK_INTERVAL: float = 0.35
 const STREAK_BANNER_DURATION: float = 1.45
 const STREAK_CHAIN_GAP_SECONDS: float = 2.1
@@ -668,8 +669,18 @@ func _spawn_boost_orb(victim: Node) -> void:
 		]
 		weapon_type = weapon_pool[randi() % weapon_pool.size()]
 	orb.configure(boost_type, amount, weapon_type)
-	orb.global_position = victim_node.global_position
+	orb.global_position = _safe_orb_spawn_position(victim_node.global_position, orb)
 	boost_orbs_root.add_child(orb)
+
+func _safe_orb_spawn_position(desired_pos: Vector2, orb: Node) -> Vector2:
+	var boundary = get_node_or_null("ArenaBoundary")
+	if boundary == null or not boundary.has_method("clamp_point"):
+		return desired_pos
+	var pickup_radius = 0.0
+	if orb != null and orb.has_method("get_pickup_radius"):
+		pickup_radius = maxf(float(orb.get_pickup_radius()), 0.0)
+	var clamp_radius = pickup_radius + ORB_BOUNDARY_PADDING
+	return boundary.clamp_point(desired_pos, clamp_radius)
 
 func _compute_orb_value(victim: Node, boost_type: int) -> float:
 	var survival = 0.0
