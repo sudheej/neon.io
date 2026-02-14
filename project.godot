@@ -30,14 +30,16 @@ move_left={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":65,"
 move_right={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":68,"keycode":68,"unicode":100),Object(InputEventKey,"physical_keycode":4194321,"keycode":4194321)]}
 expand_mode={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":69,"keycode":69,"unicode":101)]}
 expand_place={"deadzone":0.5,"events":[Object(InputEventMouseButton,"button_index":1,"pressed":true)]}
-select_next_slot={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":9,"keycode":9,"unicode":9)]}
+select_next_slot={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":93,"keycode":93,"unicode":93)]}
 select_prev_slot={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":91,"keycode":91,"unicode":91)]}
+toggle_minimap={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":9,"keycode":9,"unicode":9)]}
 restart_game={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":82,"keycode":82,"unicode":114)]}
 toggle_range={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":81,"keycode":81,"unicode":113)]}
 weapon_laser={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":49,"keycode":49,"unicode":49)]}
 weapon_stun={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":50,"keycode":50,"unicode":50)]}
 weapon_homing={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":51,"keycode":51,"unicode":51)]}
 weapon_spread={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":52,"keycode":52,"unicode":52)]}
+toggle_mute={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":77,"keycode":77,"unicode":109)]}
 
 [rendering]
 

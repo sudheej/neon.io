@@ -7,10 +7,20 @@ signal died(victim: Node)
 
 const MOVE_SPEED: float = 180.0
 const ACCEL: float = 12.0
+const AI_MOVE_SPEED_MULTIPLIER: float = 0.9
+const AI_ACCEL_MULTIPLIER: float = 0.78
 const EXPAND_COST: float = 60.0
 const KILL_REWARD_BASE: float = 6.5
-const KILL_REWARD_PER_EXTRA_CELL: float = 2.0
-const KILL_REWARD_MAX: float = 20.0
+const KILL_REWARD_PER_EXTRA_CELL: float = 2.8
+const KILL_REWARD_EXPANDED_CELLS: int = 4
+const KILL_REWARD_ELITE_CELLS: int = 7
+const KILL_REWARD_EXPANDED_BONUS: float = 4.0
+const KILL_REWARD_ELITE_BONUS: float = 8.0
+const KILL_REWARD_XP_BOUNTY_RATE: float = 0.022
+const KILL_REWARD_XP_BOUNTY_MAX: float = 12.0
+const KILL_REWARD_SURVIVAL_BOUNTY_RATE: float = 0.16
+const KILL_REWARD_SURVIVAL_BOUNTY_MAX: float = 8.0
+const KILL_REWARD_MAX: float = 54.0
 const KILL_COMBO_WINDOW: float = 4.0
 const KILL_COMBO_BONUS_STEP: float = 1.0
 const KILL_COMBO_BONUS_MAX: float = 4.0
@@ -164,14 +174,19 @@ func _physics_process(delta: float) -> void:
 	elif input_enabled:
 		_update_commands()
 	var move_dir = move_command
+	var accel = ACCEL
 	if not is_ai:
 		move_dir = move_command.normalized()
 	elif move_dir.length() > 1.0:
 		move_dir = move_dir.normalized()
+	if is_ai:
+		accel *= AI_ACCEL_MULTIPLIER
 	var target_vel = move_dir * MOVE_SPEED
+	if is_ai:
+		target_vel *= AI_MOVE_SPEED_MULTIPLIER
 	if stun_time > 0.0:
 		target_vel *= 0.35
-	velocity = velocity.lerp(target_vel, 1.0 - pow(0.001, delta * ACCEL))
+	velocity = velocity.lerp(target_vel, 1.0 - pow(0.001, delta * accel))
 	global_position += velocity * delta
 	_apply_arena_boundary_collision()
 	if spawn_timer <= 0.0:
@@ -357,7 +372,16 @@ func _compute_kill_reward() -> float:
 	var cell_count = 1
 	if shape != null:
 		cell_count = max(1, shape.cells.size())
-	var reward = KILL_REWARD_BASE + float(max(0, cell_count - 1)) * KILL_REWARD_PER_EXTRA_CELL
+	var extra_cells = max(0, cell_count - 1)
+	var reward = KILL_REWARD_BASE + float(extra_cells) * KILL_REWARD_PER_EXTRA_CELL
+	if cell_count >= KILL_REWARD_ELITE_CELLS:
+		reward += KILL_REWARD_ELITE_BONUS
+	elif cell_count >= KILL_REWARD_EXPANDED_CELLS:
+		reward += KILL_REWARD_EXPANDED_BONUS
+	var xp_bounty = minf(maxf(xp, 0.0) * KILL_REWARD_XP_BOUNTY_RATE, KILL_REWARD_XP_BOUNTY_MAX)
+	reward += xp_bounty
+	var survival_bounty = minf(maxf(survival_time, 0.0) * KILL_REWARD_SURVIVAL_BOUNTY_RATE, KILL_REWARD_SURVIVAL_BOUNTY_MAX)
+	reward += survival_bounty
 	reward = minf(reward, KILL_REWARD_MAX)
 	var world = get_tree().get_first_node_in_group("world")
 	if world != null and world.has_method("get_kill_reward_multiplier"):

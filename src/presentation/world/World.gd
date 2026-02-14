@@ -75,12 +75,17 @@ var last_kill_time_by_id: Dictionary = {}
 var awesome_sfx: AudioStream = null
 var message_sfx: AudioStream = null
 var event_audio_loaded: bool = false
+var minimap_toggle_was_pressed: bool = false
+var minimap_visible_target: bool = true
+var mute_toggle_was_pressed: bool = false
+var audio_muted: bool = false
 
 @onready var player = $Player
 @onready var enemies_root = $Enemies
 @onready var camera = $Camera2D
 @onready var hud_label: Label = $HUD/InfoPanel/Body/Info
 @onready var low_health_banner = $HUD/LowHealthBanner
+@onready var mini_map: Control = $HUD/MiniMap
 @onready var game_over_layer: CanvasLayer = $GameOver
 @onready var game_over_time: Label = $GameOver/TimeSurvived
 @onready var boost_orbs_root: Node2D = $BoostOrbs
@@ -94,8 +99,22 @@ func _ready() -> void:
 	if player != null and player.has_signal("died"):
 		player.died.connect(_on_player_died)
 		player.died.connect(_on_combatant_died)
+	if mini_map != null:
+		minimap_visible_target = mini_map.visible
+	audio_muted = _is_master_bus_muted()
 	_ensure_event_audio_loaded()
 	_maybe_schedule_hud_screenshot()
+
+func _input(event: InputEvent) -> void:
+	if not input_enabled:
+		return
+	if event.is_action_pressed("toggle_minimap"):
+		_toggle_minimap_visibility()
+		minimap_toggle_was_pressed = true
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("toggle_mute"):
+		_toggle_mute()
+		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not input_enabled:
@@ -104,6 +123,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_tree().reload_current_scene()
 
 func _process(delta: float) -> void:
+	_poll_minimap_toggle()
+	_poll_mute_toggle()
 	if game_over:
 		game_over_pulse = fmod(game_over_pulse + delta, TAU)
 		_update_game_over_time()
@@ -129,6 +150,27 @@ func _process(delta: float) -> void:
 	_update_leaderboard(delta, combatants)
 	_update_announcements(delta)
 	_maybe_spawn_enemy(delta, combatants.size() - 1)
+
+func _poll_minimap_toggle() -> void:
+	var pressed = Input.is_action_pressed("toggle_minimap") or Input.is_key_pressed(KEY_TAB)
+	if pressed and not minimap_toggle_was_pressed:
+		_toggle_minimap_visibility()
+	minimap_toggle_was_pressed = pressed
+
+func _poll_mute_toggle() -> void:
+	var pressed = Input.is_action_pressed("toggle_mute") or Input.is_key_pressed(KEY_M)
+	if pressed and not mute_toggle_was_pressed:
+		_toggle_mute()
+	mute_toggle_was_pressed = pressed
+
+func _toggle_minimap_visibility() -> void:
+	if mini_map == null:
+		return
+	minimap_visible_target = not minimap_visible_target
+	if mini_map.has_method("set_minimap_enabled"):
+		mini_map.set_minimap_enabled(minimap_visible_target)
+	else:
+		mini_map.visible = minimap_visible_target
 
 func _get_combatants() -> Array[Node]:
 	var list: Array[Node] = get_tree().get_nodes_in_group("combatants")
@@ -278,7 +320,24 @@ func _update_hud(combatants: Array[Node]) -> void:
 	if player.get("xp") == null:
 		return
 	var enemy_count = max(combatants.size() - 1, 0)
-	hud_label.text = "CREDITS: %.1f\nENEMIES: %d\n[R] RESTART" % [player.xp, enemy_count]
+	hud_label.text = "CREDITS: %.1f\nENEMIES: %d\n[M] MUTE  [R] RESTART" % [player.xp, enemy_count]
+
+func _toggle_mute() -> void:
+	var master_bus := AudioServer.get_bus_index("Master")
+	if master_bus < 0:
+		return
+	audio_muted = not AudioServer.is_bus_mute(master_bus)
+	AudioServer.set_bus_mute(master_bus, audio_muted)
+	if audio_muted:
+		_show_general_announcement("AUDIO MUTED", null, 0.0)
+	else:
+		_show_general_announcement("AUDIO ON", null, 0.0)
+
+func _is_master_bus_muted() -> bool:
+	var master_bus := AudioServer.get_bus_index("Master")
+	if master_bus < 0:
+		return false
+	return AudioServer.is_bus_mute(master_bus)
 
 func _current_enemy_cap() -> int:
 	var ramp = int(floor(elapsed / SPAWN_RAMP_SECONDS))
