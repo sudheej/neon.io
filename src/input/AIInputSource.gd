@@ -37,6 +37,8 @@ const GOAL_DECISION_INTERVAL: float = 0.42
 const GOAL_LOCK_MIN: float = 1.2
 const GOAL_LOCK_MAX: float = 2.6
 const CAMP_HOLD_RADIUS: float = 110.0
+const BOUNDARY_AVOID_MARGIN: float = 180.0
+const BOUNDARY_HARD_MARGIN: float = 52.0
 const EXPAND_INTENT_MIN: float = 2.0
 const EXPAND_INTENT_MAX: float = 4.0
 const PRIORITY_TARGET_REFRESH_MIN: float = 0.5
@@ -141,7 +143,11 @@ func _process(delta: float) -> void:
 	var move = _compute_goal_vector(player, targets, orb_target)
 	move += _compute_separation_vector(player, targets)
 	move += _compute_dodge_vector(player) * 0.6
+	var boundary_avoid = _compute_boundary_avoid_vector(player)
+	move += boundary_avoid * 1.15
+	move = _redirect_move_from_boundary(player, move)
 	move *= _difficulty_scale()
+	move += boundary_avoid * 0.85
 	emit_command(GameCommand.move(actor_id, move))
 	_maybe_pick_weapon(player, targets, delta)
 	_set_preferred_target(player)
@@ -677,6 +683,62 @@ func _compute_reposition_vector(owner: Node2D, targets: Array, orb_target: Node2
 	if move.length_squared() <= 0.0001:
 		return preferred_axis
 	return move.normalized()
+
+func _compute_boundary_avoid_vector(owner: Node2D) -> Vector2:
+	var boundary = _get_arena_boundary()
+	if boundary == null or not boundary.has_method("get_inner_rect_global"):
+		return Vector2.ZERO
+	var rect = boundary.get_inner_rect_global() as Rect2
+	var pos = owner.global_position
+	var left_dist = pos.x - rect.position.x
+	var right_dist = rect.end.x - pos.x
+	var top_dist = pos.y - rect.position.y
+	var bottom_dist = rect.end.y - pos.y
+	var avoid = Vector2.ZERO
+	if left_dist < BOUNDARY_AVOID_MARGIN:
+		avoid.x += 1.0 - clampf(left_dist / BOUNDARY_AVOID_MARGIN, 0.0, 1.0)
+	if right_dist < BOUNDARY_AVOID_MARGIN:
+		avoid.x -= 1.0 - clampf(right_dist / BOUNDARY_AVOID_MARGIN, 0.0, 1.0)
+	if top_dist < BOUNDARY_AVOID_MARGIN:
+		avoid.y += 1.0 - clampf(top_dist / BOUNDARY_AVOID_MARGIN, 0.0, 1.0)
+	if bottom_dist < BOUNDARY_AVOID_MARGIN:
+		avoid.y -= 1.0 - clampf(bottom_dist / BOUNDARY_AVOID_MARGIN, 0.0, 1.0)
+	return avoid
+
+func _redirect_move_from_boundary(owner: Node2D, move: Vector2) -> Vector2:
+	var boundary = _get_arena_boundary()
+	if boundary == null or not boundary.has_method("get_inner_rect_global"):
+		return move
+	var rect = boundary.get_inner_rect_global() as Rect2
+	var pos = owner.global_position
+	var adjusted = move
+	var left_dist = pos.x - rect.position.x
+	var right_dist = rect.end.x - pos.x
+	var top_dist = pos.y - rect.position.y
+	var bottom_dist = rect.end.y - pos.y
+	if left_dist < BOUNDARY_HARD_MARGIN and adjusted.x < 0.0:
+		adjusted.x = absf(adjusted.x) + 0.35
+		if absf(adjusted.y) < 0.15:
+			adjusted.y = randf_range(-0.8, 0.8)
+	if right_dist < BOUNDARY_HARD_MARGIN and adjusted.x > 0.0:
+		adjusted.x = -absf(adjusted.x) - 0.35
+		if absf(adjusted.y) < 0.15:
+			adjusted.y = randf_range(-0.8, 0.8)
+	if top_dist < BOUNDARY_HARD_MARGIN and adjusted.y < 0.0:
+		adjusted.y = absf(adjusted.y) + 0.35
+		if absf(adjusted.x) < 0.15:
+			adjusted.x = randf_range(-0.8, 0.8)
+	if bottom_dist < BOUNDARY_HARD_MARGIN and adjusted.y > 0.0:
+		adjusted.y = -absf(adjusted.y) - 0.35
+		if absf(adjusted.x) < 0.15:
+			adjusted.x = randf_range(-0.8, 0.8)
+	return adjusted
+
+func _get_arena_boundary() -> Node:
+	var world = get_tree().get_first_node_in_group("world")
+	if world == null:
+		return null
+	return world.get_node_or_null("ArenaBoundary")
 
 func _track_goal_time(delta: float) -> void:
 	match current_goal:
