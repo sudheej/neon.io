@@ -44,6 +44,8 @@ const EXPAND_INTENT_MAX: float = 4.0
 const PRIORITY_TARGET_REFRESH_MIN: float = 0.5
 const PRIORITY_TARGET_REFRESH_MAX: float = 1.0
 const LEADER_THREAT_ENGAGE: float = 1.15
+const MOVE_SMOOTHING: float = 8.5
+const MOVE_RELEASE_SMOOTHING: float = 6.5
 
 static var _shared_expand_memory: Dictionary = {}
 
@@ -99,6 +101,7 @@ var goal_time_split: Dictionary = {
 var intent_interrupt_count: int = 0
 var priority_target: Node2D = null
 var priority_target_timer: float = 0.0
+var smoothed_move: Vector2 = Vector2.ZERO
 
 enum AIProfile { BALANCED, LASER, STUNNER, HOMING, SPREADER }
 enum AIPersona { BLITZER, TURTLER, RAIDER, DUELIST, CONTROLLER }
@@ -148,6 +151,7 @@ func _process(delta: float) -> void:
 	move = _redirect_move_from_boundary(player, move)
 	move *= _difficulty_scale()
 	move += boundary_avoid * 0.85
+	move = _smooth_move_command(move, delta)
 	emit_command(GameCommand.move(actor_id, move))
 	_maybe_pick_weapon(player, targets, delta)
 	_set_preferred_target(player)
@@ -350,6 +354,21 @@ func _difficulty_scale() -> float:
 		return 0.5
 	var t = clamp(float(elapsed) / RAMP_TIME, 0.0, 1.0)
 	return lerpf(0.25, 0.7, t)
+
+func _smooth_move_command(move: Vector2, delta: float) -> Vector2:
+	var desired = move
+	var target_len = desired.length()
+	if target_len > 1.0:
+		desired = desired / target_len
+	if desired.length_squared() <= 0.0001:
+		var release_alpha = 1.0 - exp(-MOVE_RELEASE_SMOOTHING * delta)
+		smoothed_move = smoothed_move.lerp(Vector2.ZERO, release_alpha)
+	else:
+		var follow_alpha = 1.0 - exp(-MOVE_SMOOTHING * delta)
+		smoothed_move = smoothed_move.lerp(desired, follow_alpha)
+	if smoothed_move.length() > 1.0:
+		smoothed_move = smoothed_move.normalized()
+	return smoothed_move
 
 func _compute_orb_seek_vector(owner: Node2D, orb_target: Node2D, targets: Array) -> Vector2:
 	if orb_target == null or not is_instance_valid(orb_target):
