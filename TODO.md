@@ -4,18 +4,14 @@
 
 ## Status Snapshot (Updated 2026-02-15)
 
-### Current Blocker (Handoff: `--test-human-mode`, Updated 2026-02-15)
-- Symptom in both client windows (debug HUD):
-  - same `match=<id>`
-  - different `actor=<id>`
-  - `conn=0`
-  - `role=client`
-  - `remotes=0`
-- Gameplay effect:
-  - movement commands do not work in online test mode (except non-movement UI inputs like tab/mute).
-  - clients appear assigned by lobby but not connected to authoritative ENet match simulation.
-- User verification artifact:
-  - `/home/xtechkid/Pictures/multiplayer_same_lobby_issue.png`
+### Current Online Status (`--test-human-mode`)
+- User-verified now working:
+  - both clients in same match with distinct actor ids
+  - `conn=1`, `role=client`, `remotes=1`
+  - movement replicated both ways
+  - weapon/slot/range/expand actions now apply in online mode
+- Remaining minor issue:
+  - camera recenter/follow has edge-case polish needed around local death/respawn transitions.
 
 ### Debug Findings (2026-02-15, this session)
 - Root cause identified in `src/infrastructure/network/NetworkAdapter.gd`:
@@ -49,19 +45,13 @@
   - server path no longer forces offline config in `src/presentation/main/Main.gd`.
 
 ### Highest-priority next actions
-- [ ] Verify ENet server actually listens on UDP 7000 in `--test-human-mode` run.
-  - inspect `/tmp/neon_human_server.log` for `NetworkAdapter` role/transport/connect events.
-  - confirm socket with `ss -lun | rg ':7000\\b'`.
-- [ ] Verify client adapter transitions to connected.
-  - inspect `/tmp/neon_human_client_1.log` and `_2.log` for `connected_to_server` / `connection_failed` / `server_disconnected`.
-  - if no connect callback, instrument `NetworkAdapter._start_enet_transport()` and `_on_connected_to_server()` with explicit logs.
-- [ ] Re-validate server startup scene path for `NEON_SERVER=1`:
-  - ensure server process enters `World` scene and not `Lobby`.
-  - ensure `NetworkAdapter` node in server scene keeps `enabled=true`, `role=server`, `transport=enet`.
-- [ ] Confirm no client-side local fallback in online mode when disconnected (to avoid false positives during debugging).
-- [ ] Add one dedicated smoke test:
+- [ ] Camera polish:
+  - tighten local camera recenter/follow on death/respawn actor transitions in online mode.
+- [ ] Add one dedicated external-runtime smoke test:
   - boot one headless server + one client and assert `connection_changed(true)` within timeout.
   - fail test if client remains `conn=0`.
+- [ ] Add one longer online replication soak:
+  - 5+ minute dual-client run and verify no command starvation/jitter regressions.
 
 ### Completed in repo
 - Protocol contract and examples:
@@ -73,8 +63,10 @@
 - Network adapter implementation:
   - `src/infrastructure/network/NetworkAdapter.gd` (local + ENet path, message routing, version checks)
   - `src/infrastructure/network/LocalNetworkAdapter.gd`
+  - fixed ENet startup peer reuse bug (`multiplayer_peer` now reused only when actual ENet peer)
 - Online/offline input routing:
   - `src/input/InputSource.gd`
+  - movement command uplink throttling in `src/input/HumanInputSource.gd` to prevent non-move command starvation
 - Authority checks in `GameWorld` for network-tagged commands:
   - actor ownership
   - rate limiting
@@ -92,6 +84,11 @@
 - Multiplayer actor-local binding and lifecycle:
   - local player by `actor_id` wiring for HUD/camera/game-over/input in `World.gd`
   - dynamic actor register/unregister API in `GameWorld.gd`
+- Authoritative replication improvements:
+  - local actor state now applies from snapshots/deltas (not only remotes)
+  - replicated fields now include gameplay-critical data (`xp`, cells, selected weapon, armed cell)
+  - client-side network position smoothing for less coarse motion
+  - minimap identifies local actor by `actor_id`, showing other human players as enemies
 - Reconciliation primitives:
   - `state_ack` + `resync_request` support in `NetProtocol.gd` / `NetworkAdapter.gd` / `GameWorld.gd`
 - ENet single-process smoke fix:
@@ -101,6 +98,7 @@
 - ENet single-process smoke script is now fixed and passing (`scripts/tests/enet_single_process_smoke.gd`), but full external-runtime ENet validation is still required outside sandbox.
 - Backend runtime socket bind could not be validated in this sandbox (permission restriction), though Python compile passes.
 - A critical local-input regression was fixed: local commands must bypass network authority checks unless payload includes `__net`.
+- Camera follow still has a minor online respawn edge case pending polish.
 
 This is the execution plan for:
 - VPC-hosted backend.
@@ -228,12 +226,12 @@ This is the execution plan for:
 
 ### P3.3 Server state downlink
 - [x] Send periodic snapshots from authoritative server.
-- [ ] Add compact delta format for high-frequency updates.
+- [x] Add compact delta format for high-frequency updates.
 - [x] Add full snapshot fallback on desync or late join.
 
 ### Exit criteria
-- [ ] Two online clients can connect and receive authoritative state.
-- [ ] Command->apply path observed on server with actor ownership checks.
+- [x] Two online clients can connect and receive authoritative state.
+- [x] Command->apply path observed on server with actor ownership checks.
 - [ ] Snapshot stream stable for 5+ minutes without fatal errors.
 
 ---
@@ -260,7 +258,7 @@ This is the execution plan for:
 ### Exit criteria
 - [ ] 10 concurrent humans supported in one match process.
 - [ ] Cheating via client-side state mutation is ineffective.
-- [ ] Local UI follows local player in multiplayer correctly.
+- [ ] Local UI follows local player in multiplayer correctly (minor camera respawn edge case remains).
 
 ---
 

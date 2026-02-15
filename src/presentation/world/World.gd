@@ -85,6 +85,7 @@ var dedicated_server: bool = false
 var net_debug_hud: bool = false
 var local_actor_id: String = "player"
 var local_player: Node2D = null
+var _last_local_player_ref: Node2D = null
 var _bound_local_death_actor_id: String = ""
 var _bound_input_actor_id: String = ""
 var _network_adapter: Node = null
@@ -206,11 +207,22 @@ func _sync_local_player_actor_id() -> void:
 
 func _refresh_local_player() -> void:
 	local_player = _resolve_local_player()
+	if local_player != _last_local_player_ref:
+		_snap_camera_to_local_player()
+		_last_local_player_ref = local_player
 	_ensure_local_player_death_hook()
 	if _bound_input_actor_id != local_actor_id:
 		_bind_input_sources()
 		_bind_hud_targets()
 		_bound_input_actor_id = local_actor_id
+
+func _snap_camera_to_local_player() -> void:
+	if camera == null or local_player == null or not is_instance_valid(local_player):
+		return
+	var focus = local_player.global_position
+	if local_player.has_method("get_active_cell_world_pos"):
+		focus = local_player.get_active_cell_world_pos()
+	camera.global_position = focus
 
 func _resolve_local_player() -> Node2D:
 	if player != null and is_instance_valid(player):

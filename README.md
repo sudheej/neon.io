@@ -23,7 +23,7 @@ World (presentation root)
     |-- AgentInputSource
     |-- AgentBridge
     |   |-- LocalAgentStub (disabled by default)
-    |-- NetworkAdapter (local loopback transport)
+    |-- NetworkAdapter (local + ENet transport)
 ```
 
 ## Folder Structure
@@ -88,6 +88,10 @@ Useful startup overrides:
   - `NEON_TEST_CLIENT_LEFT_POS` (default `0,0`)
   - `NEON_TEST_CLIENT_RIGHT_POS` (default `970,0`)
   - enables net debug HUD on clients (`match`, `actor`, `remote count`)
+
+Current `--test-human-mode` status:
+- connected clients now show `conn=1`, `remotes=1` with synchronized movement/actions.
+- minor known issue: camera follow/recenter around local death/respawn still needs polish.
 
 ## First 5 Minutes (New Agent Session)
 Run these in order before coding:
@@ -175,7 +179,7 @@ Current command types:
   - near player, farther from player, or around ongoing action (other combatants / existing orbs)
 
 State snapshots are `GameState.to_dict()` dictionaries:
-- `actors`: list of `id`, `position`, `health`, `max_health`, `is_ai`
+- `actors`: list of `id`, `position`, `health`, `max_health`, `is_ai`, `xp`, `cells`, `selected_weapon`, `armed_cell`
 - `time`
 
 ### Local Agent Stub (Minimal Example)
@@ -245,7 +249,6 @@ ENet smoke caveat:
 - Validate ENet smoke on a normal host runtime before concluding ENet path health.
 
 Deferred for later:
-- Compact `state_delta` generation + deterministic client apply path.
 - Match director service and server allocation orchestration.
 - Full reconnect/session recovery policy.
 - Deployment, observability, and load/rollout phases from `TODO.md`.

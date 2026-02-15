@@ -140,6 +140,9 @@ func _draw() -> void:
 	draw_rect(border_rect, border_color, false, border_width)
 
 	var combatants = get_tree().get_nodes_in_group("combatants")
+	var local_actor_id := ""
+	if _world != null and is_instance_valid(_world):
+		local_actor_id = String(_world.get("local_actor_id"))
 	for entity in combatants:
 		var node = entity as Node2D
 		if node == null or not is_instance_valid(node):
@@ -153,7 +156,9 @@ func _draw() -> void:
 			continue
 		if map_pos.y < border_rect.position.y or map_pos.y > border_rect.end.y:
 			continue
-		if node.is_in_group("player"):
+		var actor_id := String(node.get("actor_id"))
+		var is_local_player := (not local_actor_id.is_empty() and actor_id == local_actor_id)
+		if is_local_player:
 			var player_half = PLAYER_MARKER_SIZE * 0.5
 			var player_rect = Rect2(map_pos - Vector2(player_half, player_half), Vector2(PLAYER_MARKER_SIZE, PLAYER_MARKER_SIZE))
 			draw_rect(player_rect, PLAYER_COLOR, true)

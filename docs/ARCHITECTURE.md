@@ -30,17 +30,17 @@ Presentation World Loop:
   - `mixed` / `human_only` -> loads `Lobby` queue flow.
 - Non-interactive startup bypasses menu for server/headless/env-driven runs.
 
-## Current Live Blocker (2026-02-15 Handoff)
-- In `./run_game.sh --test-human-mode`, both clients show:
-  - same `match_id`
-  - different `actor_id`
-  - `conn=0`, `role=client`, `remotes=0` in net debug HUD
-- Interpretation:
-  - lobby assignment works,
-  - authoritative ENet client->server connection is not established (or immediately dropped),
-  - therefore no replicated remote actors appear and movement commands do not apply online.
-- User screenshot reference:
-  - `/home/xtechkid/Pictures/multiplayer_same_lobby_issue.png`
+## Current Multiplayer State (2026-02-15)
+- `./run_game.sh --test-human-mode` now reaches connected client state:
+  - same `match_id`, distinct `actor_id`
+  - `conn=1`, `role=client`, `remotes=1`
+- Online command path verified for:
+  - movement
+  - weapon select
+  - slot/range actions
+  - shift+direction expansion actions
+- Remaining known polish item:
+  - camera follow/recenter edge case around local death/respawn transitions.
 
 ### Test-mode wiring currently in place
 - `run_game.sh --test-human-mode` now does all of:
@@ -50,18 +50,15 @@ Presentation World Loop:
   - launches two clients with shrink-mode windows (left/right),
   - enables network debug HUD (`match/actor/remotes/conn/role`) and net logs.
 
-### Handoff debug checklist
-- Server process:
-  - confirm it loads `World`, not `Lobby`.
-  - confirm `NetworkAdapter` server role starts ENet and binds UDP 7000.
-- Client process:
-  - confirm `NetworkAdapter` receives `connected_to_server`.
-  - inspect connection failure/disconnect reasons in client logs.
-- Artifacts to inspect first:
-  - `/tmp/neon_human_server.log`
-  - `/tmp/neon_human_client_1.log`
-  - `/tmp/neon_human_client_2.log`
-  - `/tmp/neon_lobby.log`
+### Recent implementation updates
+- `NetworkAdapter` ENet startup now reuses `multiplayer_peer` only when it is an actual `ENetMultiplayerPeer`; otherwise it resets and creates ENet explicitly.
+- `HumanInputSource` now throttles move uplink to avoid starving non-move commands under authority rate limits.
+- Snapshot/delta replication now includes gameplay-critical actor fields:
+  - `xp`
+  - `cells`
+  - `selected_weapon`
+  - `armed_cell`
+- `World` applies local actor authoritative state, adds client-side position smoothing, and updates minimap local/enemy classification by `actor_id`.
 
 ## Actor Identity
 - Human player uses `actor_id = "player"`.
@@ -82,7 +79,17 @@ Legacy expand commands remain for compatibility (`TOGGLE_EXPAND`, `PLACE_CELL`).
   "data": {
     "time": <float>,
     "actors": [
-      {"id": "player", "position": Vector2, "health": 40, "max_health": 40, "is_ai": false}
+      {
+        "id": "player",
+        "position": Vector2,
+        "health": 40,
+        "max_health": 40,
+        "is_ai": false,
+        "xp": 250.0,
+        "cells": [{"x": 0, "y": 0}],
+        "selected_weapon": 0,
+        "armed_cell": {"x": 0, "y": 0}
+      }
     ]
   }
 }
@@ -116,10 +123,9 @@ Legacy expand commands remain for compatibility (`TOGGLE_EXPAND`, `PLACE_CELL`).
 - Queue flow now includes assignment expiry/requeue and queue join cooldown handling.
 
 ## Multi-Session Pending Architecture Work
-- Remote actor state apply/render path in `World` from authoritative snapshots/deltas.
-- Compact server delta generation and deterministic delta apply semantics.
 - Dedicated match director service (registry + heartbeat + allocator) between lobby and match fleet.
 - Reconnect/session recovery window with actor ownership reclaim policy.
+- Camera follow/recenter polish for local death/respawn transitions in online mode.
 
 ## Boost Orbs
 - Spawn trigger: any combatant death (`Player.died` signal from player or AI instances).

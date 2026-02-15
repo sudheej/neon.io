@@ -73,6 +73,7 @@ Gameplay systems:
   - Game over overlay in `scenes/World.tscn` when human dies; press R to restart
   - Game over shows Time Survived in hh:mm:ss with pulsing animation (`GameOver/TimeSurvived`)
   - camera centers on active cell with smoothed follow
+    - online mode currently has a minor camera recenter/follow edge case around local death/respawn transitions (tracked in `TODO.md`)
   - boost orbs (`src/presentation/world/BoostOrb.gd`) spawn when any combatant dies:
     - types: XP, weapon-specific ammo, health
     - ammo orb color maps to weapon color (laser cyan, stun green, homing orange, spread purple)
@@ -88,6 +89,9 @@ Rendering:
 Notes:
 - AI targets are combatants (group `combatants`) not just player.
 - Human player is in group `player`; AI sets `is_ai=true` and removes itself from `player` group.
+- Minimap local/enemy rendering in multiplayer is actor-id based:
+  - local actor (`SessionConfig.local_actor_id`) renders as player marker
+  - all other combatants (including other humans) render as enemy markers
 - This Godot binary reports AudioStream extensions: `tres`, `res`, `sample`, `oggvorbisstr`, `mp3str`; raw `.wav`/`.ogg` do not load without import.
 - Arrow keys use Godot 4 keycodes in `project.godot` (UP 4194320, DOWN 4194322, LEFT 4194319, RIGHT 4194321).
 - Debug: run `./run_game.sh --collision-debug` to draw collision overlay and print collision distances.
@@ -97,3 +101,5 @@ Notes:
   - `powerup.wav` is intentionally disabled in gameplay flow for now
   - run `./run_game.sh --headless --import` after moving/adding audio assets to refresh `.import` remaps
 - Multiplayer phased implementation and handoff status are tracked in `TODO.md` (use it as source of truth for pending/complete).
+- `--test-human-mode` current expected HUD state after queueing both clients:
+  - same `match`, different `actor`, `conn=1`, `role=client`, `remotes=1`
