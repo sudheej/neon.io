@@ -226,9 +226,13 @@ func _drain_pending_inbound() -> void:
 	_pending_inbound = remaining
 
 func _start_enet_transport() -> void:
-	if multiplayer.multiplayer_peer != null:
-		_peer = multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	var existing_peer: MultiplayerPeer = multiplayer.multiplayer_peer
+	var existing_enet: ENetMultiplayerPeer = existing_peer as ENetMultiplayerPeer
+	if existing_enet != null:
+		_peer = existing_enet
 		_owns_peer = false
+		if log_traffic:
+			print("[network] using existing ENet peer role=%s host=%s port=%d" % [role, host, port])
 		_wire_multiplayer_signals()
 		if role == "server":
 			set_connected(true)
@@ -236,14 +240,23 @@ func _start_enet_transport() -> void:
 			set_connected(false)
 		return
 
+	if existing_peer != null:
+		if log_traffic:
+			print("[network] replacing non-ENet peer with ENet role=%s host=%s port=%d" % [role, host, port])
+		multiplayer.multiplayer_peer = null
+
 	_peer = ENetMultiplayerPeer.new()
 	_owns_peer = true
 	var err: int = ERR_CANT_CREATE
+	if log_traffic:
+		print("[network] start enet role=%s host=%s port=%d max_clients=%d" % [role, host, port, max_clients])
 	if role == "server":
 		err = _peer.create_server(port, max_clients)
 	else:
 		err = _peer.create_client(host, port)
 	if err != OK:
+		if log_traffic:
+			print("[network] enet_start_failed err=%d role=%s host=%s port=%d" % [err, role, host, port])
 		protocol_error.emit("enet_start_failed_%d" % err)
 		enabled = false
 		set_connected(false)

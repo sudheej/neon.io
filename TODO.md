@@ -4,6 +4,65 @@
 
 ## Status Snapshot (Updated 2026-02-15)
 
+### Current Blocker (Handoff: `--test-human-mode`, Updated 2026-02-15)
+- Symptom in both client windows (debug HUD):
+  - same `match=<id>`
+  - different `actor=<id>`
+  - `conn=0`
+  - `role=client`
+  - `remotes=0`
+- Gameplay effect:
+  - movement commands do not work in online test mode (except non-movement UI inputs like tab/mute).
+  - clients appear assigned by lobby but not connected to authoritative ENet match simulation.
+- User verification artifact:
+  - `/home/xtechkid/Pictures/multiplayer_same_lobby_issue.png`
+
+### Debug Findings (2026-02-15, this session)
+- Root cause identified in `src/infrastructure/network/NetworkAdapter.gd`:
+  - `_start_enet_transport()` treated any non-null `multiplayer.multiplayer_peer` as reusable ENet.
+  - In runtime this can be a non-ENet default/offline peer, so adapter never called `create_client()` / `create_server()`.
+  - Observable symptom from this bug matches blocker: `role=client` with `conn=0`, `remotes=0`, and no UDP listener on expected port.
+- Fix implemented:
+  - only reuse existing peer when it is actually `ENetMultiplayerPeer`.
+  - if an existing non-ENet peer is present, clear it and create fresh ENet peer.
+  - added explicit ENet startup logs (`start enet`, `replacing non-ENet peer`, `enet_start_failed`) when `NEON_NET_LOG=1`.
+- Verification completed:
+  - `./run_game.sh --headless --script res://scripts/tests/enet_single_process_smoke.gd` => PASS.
+- Verification still blocked in sandbox:
+  - full `./run_game.sh --test-human-mode` external flow cannot be fully validated here due lobby bind restriction (`PermissionError: [Errno 1] Operation not permitted` for Python socket bind in this sandbox).
+
+### Already attempted in this session
+- Lobby runtime hardening:
+  - changed lobby default bind host to loopback (`LOBBY_HOST=127.0.0.1`) in `backend/lobby-service/app.py`.
+  - improved lobby client error text and URL overrides in `src/presentation/lobby/Lobby.gd`.
+- Test orchestration:
+  - `run_game.sh --test-human-mode` now:
+    - starts/ensures lobby,
+    - starts dedicated human_only match server,
+    - opens two shrink-mode clients (left/right),
+    - force-cleans stale lobby/match processes before launch,
+    - enables net debug HUD + `NEON_NET_LOG`.
+- Replication groundwork:
+  - server-side network actor spawn hook added (`GameWorld -> World.spawn_network_human_actor`).
+  - world replication path for snapshot/delta apply exists in `src/presentation/world/World.gd`.
+- Main startup regression fix:
+  - server path no longer forces offline config in `src/presentation/main/Main.gd`.
+
+### Highest-priority next actions
+- [ ] Verify ENet server actually listens on UDP 7000 in `--test-human-mode` run.
+  - inspect `/tmp/neon_human_server.log` for `NetworkAdapter` role/transport/connect events.
+  - confirm socket with `ss -lun | rg ':7000\\b'`.
+- [ ] Verify client adapter transitions to connected.
+  - inspect `/tmp/neon_human_client_1.log` and `_2.log` for `connected_to_server` / `connection_failed` / `server_disconnected`.
+  - if no connect callback, instrument `NetworkAdapter._start_enet_transport()` and `_on_connected_to_server()` with explicit logs.
+- [ ] Re-validate server startup scene path for `NEON_SERVER=1`:
+  - ensure server process enters `World` scene and not `Lobby`.
+  - ensure `NetworkAdapter` node in server scene keeps `enabled=true`, `role=server`, `transport=enet`.
+- [ ] Confirm no client-side local fallback in online mode when disconnected (to avoid false positives during debugging).
+- [ ] Add one dedicated smoke test:
+  - boot one headless server + one client and assert `connection_changed(true)` within timeout.
+  - fail test if client remains `conn=0`.
+
 ### Completed in repo
 - Protocol contract and examples:
   - `docs/network/protocol_v1.md`

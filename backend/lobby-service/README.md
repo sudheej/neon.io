@@ -13,7 +13,9 @@ Optional env vars:
 - `LOBBY_HOST` (default `127.0.0.1`)
 - `LOBBY_PORT` (default `8080`)
 - `ACTIVE_MATCH_CAP` (default `10`)
-- `MIN_PLAYERS_TO_START` (default `1`)
+- `MIN_PLAYERS_TO_START` (global fallback, default `1`)
+- `MIN_PLAYERS_TO_START_MIXED` (default inherits `MIN_PLAYERS_TO_START`)
+- `MIN_PLAYERS_TO_START_HUMAN_ONLY` (default `2`)
 - `MATCH_ENDPOINT` (default `127.0.0.1:7000`)
 
 ## API

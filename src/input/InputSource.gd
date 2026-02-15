@@ -21,6 +21,11 @@ func set_command_queue(queue) -> void:
 
 func emit_command(command) -> void:
 	_resolve_network_adapter()
+	if _is_online_client_role():
+		if _network_adapter != null and _network_adapter.has_method("net_is_connected") and bool(_network_adapter.call("net_is_connected")):
+			if _network_adapter.has_method("send_command"):
+				_network_adapter.send_command(command)
+		return
 	if _should_send_over_network() and _network_adapter.has_method("send_command"):
 		_network_adapter.send_command(command)
 		return
@@ -48,3 +53,13 @@ func _resolve_network_adapter() -> void:
 		if _network_adapter != null:
 			return
 	_network_adapter = get_tree().get_first_node_in_group("network_adapter")
+
+func _is_online_client_role() -> bool:
+	_resolve_network_adapter()
+	if _network_adapter == null:
+		return false
+	if not _network_adapter.has_method("is_online"):
+		return false
+	if not bool(_network_adapter.call("is_online")):
+		return false
+	return String(_network_adapter.get("role")) == "client"

@@ -109,6 +109,8 @@ func _apply_command(command) -> void:
 	var cmd_type = command.type
 	var actor_id = command.actor_id
 	var actor = _resolve_actor(actor_id)
+	if actor == null:
+		actor = _maybe_spawn_network_actor(command)
 	match cmd_type:
 		GameCommand.Type.MOVE:
 			if actor != null and actor.has_method("set_move_command"):
@@ -484,3 +486,28 @@ func _find_network_adapter() -> Node:
 	if nodes.is_empty():
 		return null
 	return nodes[0]
+
+func _maybe_spawn_network_actor(command) -> Node:
+	if command == null:
+		return null
+	if _world == null or not _world.has_method("spawn_network_human_actor"):
+		return null
+	if _network == null or not is_instance_valid(_network):
+		_network = _find_network_adapter()
+	if _network == null:
+		return null
+	if String(_network.get("role")) != "server":
+		return null
+	var payload = command.payload if command.payload is Dictionary else {}
+	var net_meta = payload.get("__net", {})
+	if not (net_meta is Dictionary):
+		return null
+	var actor_id := String(command.actor_id)
+	var player_id := String(net_meta.get("player_id", ""))
+	if actor_id.is_empty() or player_id.is_empty():
+		return null
+	var spawned = _world.call("spawn_network_human_actor", actor_id, player_id)
+	if spawned != null and is_instance_valid(spawned):
+		register_actor(actor_id, spawned, player_id)
+		return spawned
+	return null

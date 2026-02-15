@@ -82,6 +82,7 @@ var mute_toggle_was_pressed: bool = false
 var audio_muted: bool = false
 var game_mode: String = "offline_ai"
 var dedicated_server: bool = false
+var net_debug_hud: bool = false
 var local_actor_id: String = "player"
 var local_player: Node2D = null
 var _bound_local_death_actor_id: String = ""
@@ -89,6 +90,7 @@ var _bound_input_actor_id: String = ""
 var _network_adapter: Node = null
 var _last_network_state_tick: int = -1
 var _replicated_actor_ids: Dictionary = {}
+var _net_debug_label: Label = null
 
 @onready var player = $Player
 @onready var enemies_root = $Enemies
@@ -120,6 +122,7 @@ func _ready() -> void:
 	audio_muted = _is_master_bus_muted()
 	_ensure_event_audio_loaded()
 	_maybe_schedule_hud_screenshot()
+	_setup_net_debug_hud()
 
 func _input(event: InputEvent) -> void:
 	if not input_enabled:
@@ -408,6 +411,50 @@ func _spawn_enemy() -> void:
 	if enemy.has_signal("died"):
 		enemy.died.connect(_on_combatant_died)
 
+func spawn_network_human_actor(actor_id: String, _owner_player_id: String = "") -> Node2D:
+	if actor_id.is_empty():
+		return null
+	var existing := _find_actor_by_id(actor_id)
+	if existing != null and is_instance_valid(existing):
+		return existing
+	var claimed := _claim_bootstrap_player_for_actor(actor_id)
+	if claimed != null and is_instance_valid(claimed):
+		return claimed
+	var actor := PlayerScene.instantiate() as Node2D
+	if actor == null:
+		return null
+	actor.name = "Net_%s" % actor_id
+	if actor.has_method("set_ai_enabled"):
+		actor.set_ai_enabled(false)
+	if actor.has_method("set_input_enabled"):
+		actor.set_input_enabled(false)
+	actor.set("actor_id", actor_id)
+	actor.global_position = _network_spawn_position()
+	enemies_root.add_child(actor)
+	_register_actor_with_world(actor)
+	if actor.has_signal("died"):
+		actor.died.connect(_on_combatant_died)
+	return actor
+
+func _claim_bootstrap_player_for_actor(actor_id: String) -> Node2D:
+	if player == null or not is_instance_valid(player):
+		return null
+	if String(player.get("actor_id")) != "player":
+		return null
+	if player.has_method("set_ai_enabled"):
+		player.set_ai_enabled(false)
+	if player.has_method("set_input_enabled"):
+		player.set_input_enabled(false)
+	player.set("actor_id", actor_id)
+	player.global_position = _network_spawn_position()
+	_register_actor_with_world(player)
+	return player
+
+func _network_spawn_position() -> Vector2:
+	var angle := randf_range(0.0, TAU)
+	var radius := randf_range(40.0, 150.0)
+	return Vector2(cos(angle), sin(angle)) * radius
+
 func _current_player_spawn_exclusion(enemy_count: int) -> float:
 	var t = clampf(elapsed / PLAYER_EXCLUSION_BLEND_TIME, 0.0, 1.0)
 	var dist = lerpf(PLAYER_EXCLUSION_RADIUS_EARLY, PLAYER_EXCLUSION_RADIUS_LATE, t)
@@ -463,6 +510,7 @@ func _update_hud(combatants: Array[Node]) -> void:
 		return
 	var enemy_count = max(combatants.size() - 1, 0)
 	hud_label.text = "CREDITS: %.1f\nENEMIES: %d\n[M] MUTE  [R] RESTART" % [local_player.xp, enemy_count]
+	_update_net_debug_hud()
 
 func _toggle_mute() -> void:
 	var master_bus := AudioServer.get_bus_index("Master")
@@ -930,11 +978,15 @@ func _compute_orb_value(victim: Node, boost_type: int) -> float:
 
 func _apply_runtime_mode() -> void:
 	var mode_override: String = OS.get_environment("NEON_MODE")
+	var net_hud_env := OS.get_environment("NEON_NET_DEBUG_HUD").to_lower()
+	net_debug_hud = net_hud_env == "1" or net_hud_env == "true"
 	for arg in OS.get_cmdline_args():
 		if arg == "--server":
 			dedicated_server = true
 		elif arg.begins_with("--mode="):
 			mode_override = arg.get_slice("=", 1)
+		elif arg == "--net-debug-hud":
+			net_debug_hud = true
 	var env_server: String = OS.get_environment("NEON_SERVER")
 	if env_server == "1" or env_server.to_lower() == "true":
 		dedicated_server = true
@@ -976,6 +1028,48 @@ func _configure_dedicated_server_presentation() -> void:
 		get_node("HUD").visible = false
 	if game_over_layer != null:
 		game_over_layer.visible = false
+
+func _setup_net_debug_hud() -> void:
+	if not net_debug_hud:
+		return
+	var hud_layer = get_node_or_null("HUD") as CanvasLayer
+	if hud_layer == null:
+		return
+	_net_debug_label = Label.new()
+	_net_debug_label.name = "NetDebugHUD"
+	_net_debug_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_net_debug_label.anchor_left = 0.0
+	_net_debug_label.anchor_top = 0.0
+	_net_debug_label.anchor_right = 0.0
+	_net_debug_label.anchor_bottom = 0.0
+	_net_debug_label.offset_left = 14.0
+	_net_debug_label.offset_top = 248.0
+	_net_debug_label.offset_right = 520.0
+	_net_debug_label.offset_bottom = 300.0
+	_net_debug_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_net_debug_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	_net_debug_label.add_theme_color_override("font_color", Color(0.65, 0.96, 1.0, 0.92))
+	_net_debug_label.add_theme_constant_override("outline_size", 1)
+	_net_debug_label.add_theme_color_override("font_outline_color", Color(0.02, 0.1, 0.16, 0.92))
+	hud_layer.add_child(_net_debug_label)
+	_update_net_debug_hud()
+
+func _update_net_debug_hud() -> void:
+	if _net_debug_label == null or not is_instance_valid(_net_debug_label):
+		return
+	var connected := false
+	var role := "offline"
+	if _network_adapter != null and is_instance_valid(_network_adapter):
+		role = String(_network_adapter.get("role"))
+		if _network_adapter.has_method("net_is_connected"):
+			connected = bool(_network_adapter.call("net_is_connected"))
+	_net_debug_label.text = "NET match=%s actor=%s remotes=%d conn=%d role=%s" % [
+		SessionConfig.match_id,
+		local_actor_id,
+		int(_replicated_actor_ids.size()),
+		1 if connected else 0,
+		role
+	]
 
 func _bind_network_adapter() -> void:
 	_network_adapter = get_node_or_null("GameWorld/NetworkAdapter")

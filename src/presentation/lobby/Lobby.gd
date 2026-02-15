@@ -274,12 +274,16 @@ func _set_error(message: String) -> void:
 func _build_session_id() -> String:
 	if not SessionConfig.session_id.is_empty() and SessionConfig.session_id != "local_session":
 		return SessionConfig.session_id
-	return "sess_%d_%d" % [Time.get_unix_time_from_system(), randi_range(1000, 9999)]
+	return "sess_%d_%d_%d" % [
+		int(Time.get_unix_time_from_system()),
+		Time.get_ticks_usec(),
+		OS.get_process_id()
+	]
 
 func _build_player_id() -> String:
 	if not SessionConfig.player_id.is_empty() and SessionConfig.player_id != "player":
 		return SessionConfig.player_id
-	return "player_%d" % randi_range(10000, 99999)
+	return "player_%d_%d" % [OS.get_process_id(), Time.get_ticks_usec()]
 
 func _update_label() -> void:
 	SessionConfig.selected_mode = _current_mode()

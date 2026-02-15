@@ -55,13 +55,43 @@ is_lobby_healthy() {
 
 start_lobby_service() {
   echo "[run_game] Starting lobby service at ${LOBBY_HOST_DEFAULT}:${LOBBY_PORT_DEFAULT}"
+  local min_human="${MIN_PLAYERS_TO_START_HUMAN_ONLY:-2}"
+  local min_mixed="${MIN_PLAYERS_TO_START_MIXED:-1}"
   (
     cd "$ROOT_DIR/backend/lobby-service"
     LOBBY_HOST="$LOBBY_HOST_DEFAULT" \
     LOBBY_PORT="$LOBBY_PORT_DEFAULT" \
+    MIN_PLAYERS_TO_START_HUMAN_ONLY="$min_human" \
+    MIN_PLAYERS_TO_START_MIXED="$min_mixed" \
     nohup python3 app.py >/tmp/neon_lobby.log 2>&1 &
     echo $! >/tmp/neon_lobby.pid
   )
+}
+
+stop_managed_lobby_service() {
+  if [[ -f /tmp/neon_lobby.pid ]]; then
+    local pid
+    pid="$(cat /tmp/neon_lobby.pid 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" >/dev/null 2>&1 || true
+      sleep 0.2
+    fi
+    rm -f /tmp/neon_lobby.pid
+  fi
+}
+
+stop_existing_test_servers() {
+  echo "[run_game] Stopping existing lobby/match server processes"
+  pkill -f "backend/lobby-service/app.py" >/dev/null 2>&1 || true
+  pkill -f "NEON_NETWORK_ROLE=server" >/dev/null 2>&1 || true
+  pkill -f "NEON_SERVER=1" >/dev/null 2>&1 || true
+  pkill -f "NEON_MODE=human_only" >/dev/null 2>&1 || true
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -k 7000/udp >/dev/null 2>&1 || true
+    fuser -k "${LOBBY_PORT_DEFAULT}/tcp" >/dev/null 2>&1 || true
+  fi
+  rm -f /tmp/neon_lobby.pid /tmp/neon_human_server.pid
+  sleep 0.3
 }
 
 ensure_lobby_service() {
@@ -94,6 +124,7 @@ start_human_mode_server() {
     NEON_MODE=human_only \
     NEON_NETWORK_ROLE=server \
     NEON_TRANSPORT=enet \
+    NEON_NET_LOG=1 \
     NEON_PORT=7000 \
     NEON_MAX_PLAYERS=10 \
     "$BIN" $VERBOSE_FLAG --headless --path "$ROOT_DIR" >/tmp/neon_human_server.log 2>&1 &
@@ -112,16 +143,20 @@ launch_human_mode_clients() {
       NEON_MODE=human_only \
       NEON_AUTO_START=1 \
       NEON_LOBBY_URL="$LOBBY_URL" \
+      NEON_NET_DEBUG_HUD=1 \
+      NEON_NET_LOG=1 \
       "$BIN" $VERBOSE_FLAG \
       --path "$ROOT_DIR" \
       --windowed \
       --resolution "$client_resolution" \
       --position "$pos" \
+      --net-debug-hud \
       --skip-mode-select >/tmp/neon_human_client_${idx}.log 2>&1 &
   done
 }
 
 if [[ "$TEST_HUMAN_MODE" -eq 1 ]]; then
+  stop_existing_test_servers
   ensure_lobby_service
   if ! is_match_server_listening; then
     start_human_mode_server

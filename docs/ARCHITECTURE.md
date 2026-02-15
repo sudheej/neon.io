@@ -30,6 +30,39 @@ Presentation World Loop:
   - `mixed` / `human_only` -> loads `Lobby` queue flow.
 - Non-interactive startup bypasses menu for server/headless/env-driven runs.
 
+## Current Live Blocker (2026-02-15 Handoff)
+- In `./run_game.sh --test-human-mode`, both clients show:
+  - same `match_id`
+  - different `actor_id`
+  - `conn=0`, `role=client`, `remotes=0` in net debug HUD
+- Interpretation:
+  - lobby assignment works,
+  - authoritative ENet client->server connection is not established (or immediately dropped),
+  - therefore no replicated remote actors appear and movement commands do not apply online.
+- User screenshot reference:
+  - `/home/xtechkid/Pictures/multiplayer_same_lobby_issue.png`
+
+### Test-mode wiring currently in place
+- `run_game.sh --test-human-mode` now does all of:
+  - kills stale lobby/match server processes before launch,
+  - starts lobby service if missing,
+  - starts dedicated human_only match server (`NEON_SERVER=1`, `NEON_NETWORK_ROLE=server`, ENet transport),
+  - launches two clients with shrink-mode windows (left/right),
+  - enables network debug HUD (`match/actor/remotes/conn/role`) and net logs.
+
+### Handoff debug checklist
+- Server process:
+  - confirm it loads `World`, not `Lobby`.
+  - confirm `NetworkAdapter` server role starts ENet and binds UDP 7000.
+- Client process:
+  - confirm `NetworkAdapter` receives `connected_to_server`.
+  - inspect connection failure/disconnect reasons in client logs.
+- Artifacts to inspect first:
+  - `/tmp/neon_human_server.log`
+  - `/tmp/neon_human_client_1.log`
+  - `/tmp/neon_human_client_2.log`
+  - `/tmp/neon_lobby.log`
+
 ## Actor Identity
 - Human player uses `actor_id = "player"`.
 - AI actors use `actor_id = "ai_<instance_id>"`.

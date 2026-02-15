@@ -97,6 +97,26 @@ func _start_with_mode(mode_name: String) -> void:
 		menu_layer.visible = false
 	if mode_name == "offline_ai":
 		SessionConfig.configure_offline(mode_name)
-		get_tree().change_scene_to_file(WORLD_SCENE)
+		call_deferred("_deferred_change_scene", WORLD_SCENE)
 		return
-	get_tree().change_scene_to_file(LOBBY_SCENE)
+	if _should_launch_world_direct():
+		call_deferred("_deferred_change_scene", WORLD_SCENE)
+		return
+	call_deferred("_deferred_change_scene", LOBBY_SCENE)
+
+func _deferred_change_scene(scene_path: String) -> void:
+	if scene_path.is_empty():
+		return
+	get_tree().change_scene_to_file(scene_path)
+
+func _should_launch_world_direct() -> bool:
+	var args = OS.get_cmdline_args()
+	if args.has("--server"):
+		return true
+	var env_server = OS.get_environment("NEON_SERVER").to_lower()
+	if env_server == "1" or env_server == "true":
+		return true
+	var env_role = OS.get_environment("NEON_NETWORK_ROLE").to_lower()
+	if env_role == "server":
+		return true
+	return false

@@ -87,6 +87,7 @@ Useful startup overrides:
   - `NEON_TEST_CLIENT_RESOLUTION` (default `960x540`)
   - `NEON_TEST_CLIENT_LEFT_POS` (default `0,0`)
   - `NEON_TEST_CLIENT_RIGHT_POS` (default `970,0`)
+  - enables net debug HUD on clients (`match`, `actor`, `remote count`)
 
 ## First 5 Minutes (New Agent Session)
 Run these in order before coding:

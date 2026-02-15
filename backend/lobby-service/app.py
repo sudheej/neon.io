@@ -26,6 +26,10 @@ HOST = os.environ.get("LOBBY_HOST", "127.0.0.1")
 PORT = int(os.environ.get("LOBBY_PORT", "8080"))
 ACTIVE_MATCH_CAP = int(os.environ.get("ACTIVE_MATCH_CAP", "10"))
 MIN_PLAYERS_TO_START = int(os.environ.get("MIN_PLAYERS_TO_START", "1"))
+MIN_PLAYERS_TO_START_MIXED = int(os.environ.get("MIN_PLAYERS_TO_START_MIXED", str(MIN_PLAYERS_TO_START)))
+MIN_PLAYERS_TO_START_HUMAN_ONLY = int(
+    os.environ.get("MIN_PLAYERS_TO_START_HUMAN_ONLY", str(max(MIN_PLAYERS_TO_START, 2)))
+)
 MATCH_ENDPOINT = os.environ.get("MATCH_ENDPOINT", "127.0.0.1:7000")
 ASSIGNMENT_TTL_MS = int(os.environ.get("ASSIGNMENT_TTL_MS", "20000"))
 QUEUE_JOIN_COOLDOWN_MS = int(os.environ.get("QUEUE_JOIN_COOLDOWN_MS", "1200"))
@@ -91,7 +95,8 @@ def _allocate_match(mode: str) -> dict | None:
     state = QUEUES[mode]
     if not state.waiting:
         return None
-    if len(state.waiting) < MIN_PLAYERS_TO_START:
+    min_players_to_start = _min_players_to_start_for_mode(mode)
+    if len(state.waiting) < min_players_to_start:
         return None
     match_id = f"{mode}_{int(time.time())}_{len(state.active_matches) + 1}"
     players: List[str] = []
@@ -109,7 +114,7 @@ def _allocate_match(mode: str) -> dict | None:
             match_id=match_id,
             endpoint=MATCH_ENDPOINT,
             match_token=f"token_{session_id}",
-            actor_id="player",
+            actor_id=f"player_{idx + 1}",
             created_ms=now_ms,
             expires_ms=expires_ms,
         )
@@ -118,6 +123,14 @@ def _allocate_match(mode: str) -> dict | None:
         "endpoint": MATCH_ENDPOINT,
         "players": players,
     }
+
+
+def _min_players_to_start_for_mode(mode: str) -> int:
+    if mode == "human_only":
+        return max(MIN_PLAYERS_TO_START_HUMAN_ONLY, 1)
+    if mode == "mixed":
+        return max(MIN_PLAYERS_TO_START_MIXED, 1)
+    return max(MIN_PLAYERS_TO_START, 1)
 
 
 def _find_queue_position(mode: str, session_id: str) -> int:
