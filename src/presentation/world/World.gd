@@ -90,6 +90,7 @@ var _bound_input_actor_id: String = ""
 var _network_adapter: Node = null
 var _last_network_state_tick: int = -1
 var _replicated_actor_ids: Dictionary = {}
+var _net_target_pos_by_actor: Dictionary = {}
 var _net_debug_label: Label = null
 
 @onready var player = $Player
@@ -148,6 +149,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _process(delta: float) -> void:
 	_refresh_local_player()
+	_smooth_network_actor_positions(delta)
 	_poll_minimap_toggle()
 	_poll_mute_toggle()
 	if game_over:
@@ -1108,10 +1110,14 @@ func _apply_full_actor_state(raw_actors) -> void:
 			continue
 		var actor_data: Dictionary = raw_actor
 		var actor_id := String(actor_data.get("id", ""))
-		if actor_id.is_empty() or actor_id == local_actor_id:
+		if actor_id.is_empty():
 			continue
-		present_remote_ids[actor_id] = true
-		var actor = _ensure_replicated_actor(actor_id, actor_data)
+		var actor: Node2D = null
+		if actor_id == local_actor_id:
+			actor = _find_actor_by_id(actor_id)
+		else:
+			present_remote_ids[actor_id] = true
+			actor = _ensure_replicated_actor(actor_id, actor_data)
 		if actor != null:
 			_apply_actor_state(actor, actor_data)
 	for actor_id in _replicated_actor_ids.keys():
@@ -1127,9 +1133,13 @@ func _apply_delta_actor_state(data: Dictionary) -> void:
 				continue
 			var actor_data: Dictionary = raw_actor
 			var actor_id := String(actor_data.get("id", ""))
-			if actor_id.is_empty() or actor_id == local_actor_id:
+			if actor_id.is_empty():
 				continue
-			var actor = _ensure_replicated_actor(actor_id, actor_data)
+			var actor: Node2D = null
+			if actor_id == local_actor_id:
+				actor = _find_actor_by_id(actor_id)
+			else:
+				actor = _ensure_replicated_actor(actor_id, actor_data)
 			if actor != null:
 				_apply_actor_state(actor, actor_data)
 	var removes_raw = data.get("actors_remove", [])
@@ -1164,24 +1174,91 @@ func _ensure_replicated_actor(actor_id: String, actor_data: Dictionary) -> Node2
 func _apply_actor_state(actor: Node2D, actor_data: Dictionary) -> void:
 	if actor == null or not is_instance_valid(actor):
 		return
+	var actor_id := String(actor.get("actor_id"))
 	if actor_data.has("position"):
 		var pos_raw = actor_data.get("position")
+		var target_pos := actor.global_position
 		if pos_raw is Vector2:
-			actor.global_position = pos_raw
+			target_pos = pos_raw
 		elif pos_raw is Dictionary:
 			var pos_dict: Dictionary = pos_raw
-			actor.global_position = Vector2(float(pos_dict.get("x", actor.global_position.x)), float(pos_dict.get("y", actor.global_position.y)))
+			target_pos = Vector2(float(pos_dict.get("x", actor.global_position.x)), float(pos_dict.get("y", actor.global_position.y)))
+		if not actor_id.is_empty() and not _net_target_pos_by_actor.has(actor_id):
+			actor.global_position = target_pos
+		if not actor_id.is_empty():
+			_net_target_pos_by_actor[actor_id] = target_pos
 	if actor_data.has("health"):
 		actor.set("health", float(actor_data.get("health", actor.get("health"))))
 	if actor_data.has("max_health"):
 		actor.set("max_health", float(actor_data.get("max_health", actor.get("max_health"))))
 	if actor_data.has("is_ai"):
 		actor.set("is_ai", bool(actor_data.get("is_ai", actor.get("is_ai"))))
+	if actor_data.has("xp"):
+		actor.set("xp", float(actor_data.get("xp", actor.get("xp"))))
+	if actor_data.has("cells"):
+		_apply_actor_cells(actor, actor_data.get("cells", []))
+	var weapon_system = actor.get_node_or_null("WeaponSystem")
+	if weapon_system != null and actor_data.has("selected_weapon"):
+		var selected_weapon := int(actor_data.get("selected_weapon", weapon_system.get("selected_weapon_type")))
+		if int(weapon_system.get("selected_weapon_type")) != selected_weapon:
+			weapon_system.set("selected_weapon_type", selected_weapon)
+			if weapon_system.has_method("_apply_weapon_to_all_slots"):
+				weapon_system.call("_apply_weapon_to_all_slots", selected_weapon)
+	if weapon_system != null and actor_data.has("armed_cell"):
+		var armed = actor_data.get("armed_cell")
+		var armed_cell := Vector2i.ZERO
+		if armed is Vector2i:
+			armed_cell = armed
+		elif armed is Dictionary:
+			var armed_dict: Dictionary = armed
+			armed_cell = Vector2i(int(armed_dict.get("x", 0)), int(armed_dict.get("y", 0)))
+		if weapon_system.has_method("set_armed_cell"):
+			weapon_system.call("set_armed_cell", armed_cell)
+
+func _apply_actor_cells(actor: Node2D, raw_cells) -> void:
+	var shape = actor.get_node_or_null("PlayerShape")
+	if shape == null or not (raw_cells is Array):
+		return
+	var next_cells: Array[Vector2i] = []
+	for entry in raw_cells:
+		if entry is Vector2i:
+			next_cells.append(entry)
+		elif entry is Dictionary:
+			var cell_dict: Dictionary = entry
+			next_cells.append(Vector2i(int(cell_dict.get("x", 0)), int(cell_dict.get("y", 0))))
+	if next_cells.is_empty():
+		next_cells.append(Vector2i.ZERO)
+	var current_raw = shape.get("cells")
+	if current_raw is Dictionary:
+		var current_keys: Array[Vector2i] = []
+		for key in (current_raw as Dictionary).keys():
+			if key is Vector2i:
+				current_keys.append(key)
+		if _same_cell_set(current_keys, next_cells):
+			return
+	shape.set("cells", {})
+	for grid_pos in next_cells:
+		shape.call("add_cell", grid_pos)
+	var weapon_system = actor.get_node_or_null("WeaponSystem")
+	if weapon_system != null and weapon_system.has_method("on_shape_changed"):
+		weapon_system.call("on_shape_changed")
+
+func _same_cell_set(a: Array[Vector2i], b: Array[Vector2i]) -> bool:
+	if a.size() != b.size():
+		return false
+	var lookup: Dictionary = {}
+	for cell in a:
+		lookup["%d:%d" % [cell.x, cell.y]] = true
+	for cell in b:
+		if not lookup.has("%d:%d" % [cell.x, cell.y]):
+			return false
+	return true
 
 func _remove_replicated_actor(actor_id: String) -> void:
 	if actor_id.is_empty():
 		return
 	_replicated_actor_ids.erase(actor_id)
+	_net_target_pos_by_actor.erase(actor_id)
 	var actor = _find_actor_by_id(actor_id)
 	if actor != null and is_instance_valid(actor):
 		actor.queue_free()
@@ -1202,6 +1279,26 @@ func _is_replicated_actor(node: Node) -> bool:
 	if actor_id.is_empty():
 		return false
 	return _replicated_actor_ids.has(actor_id)
+
+func _smooth_network_actor_positions(delta: float) -> void:
+	if not _is_online_client():
+		return
+	var alpha := 1.0 - exp(-16.0 * delta)
+	for node in get_tree().get_nodes_in_group("combatants"):
+		var actor := node as Node2D
+		if actor == null or not is_instance_valid(actor):
+			continue
+		var actor_id := String(actor.get("actor_id"))
+		if actor_id.is_empty():
+			continue
+		if not _net_target_pos_by_actor.has(actor_id):
+			continue
+		var target: Vector2 = _net_target_pos_by_actor[actor_id]
+		var delta_pos := target - actor.global_position
+		if delta_pos.length() > 140.0:
+			actor.global_position = target
+			continue
+		actor.global_position = actor.global_position.lerp(target, alpha)
 
 func _should_spawn_ai_locally() -> bool:
 	if dedicated_server:

@@ -73,7 +73,7 @@ script = ExtResource("13")
 script = ExtResource("5")
 command_queue_path = NodePath("CommandQueue")
 world_path = NodePath("..")
-snapshot_interval = 0.2
+snapshot_interval = 0.05
 
 [node name="CommandQueue" type="Node" parent="GameWorld"]
 script = ExtResource("6")

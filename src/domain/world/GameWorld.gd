@@ -289,8 +289,26 @@ func _build_snapshot() -> Dictionary:
 			"position": {"x": pos.x, "y": pos.y},
 			"health": node.get("health"),
 			"max_health": node.get("max_health"),
-			"is_ai": node.get("is_ai")
+			"is_ai": node.get("is_ai"),
+			"xp": node.get("xp")
 		}
+		var shape = node.get_node_or_null("PlayerShape")
+		if shape != null:
+			var cells_raw = shape.get("cells")
+			if cells_raw is Dictionary:
+				var packed_cells: Array = []
+				for key in (cells_raw as Dictionary).keys():
+					var grid_pos = key
+					if grid_pos is Vector2i:
+						var cell := grid_pos as Vector2i
+						packed_cells.append({"x": cell.x, "y": cell.y})
+				actor_data["cells"] = packed_cells
+		var weapon_system = node.get_node_or_null("WeaponSystem")
+		if weapon_system != null:
+			if weapon_system.has_method("get_selected_weapon_type"):
+				actor_data["selected_weapon"] = int(weapon_system.call("get_selected_weapon_type"))
+			if weapon_system.has_method("get_armed_cell"):
+				actor_data["armed_cell"] = weapon_system.call("get_armed_cell")
 		data["actors"].append(actor_data)
 	return data
 
@@ -406,7 +424,7 @@ func _build_state_delta(
 			continue
 		var prev_actor: Dictionary = previous_actors.get(actor_id, {})
 		var actor_delta: Dictionary = {"id": actor_id}
-		for field_name in ["position", "health", "max_health", "is_ai"]:
+		for field_name in ["position", "health", "max_health", "is_ai", "xp", "cells", "selected_weapon", "armed_cell"]:
 			if not _values_equal(curr_actor.get(field_name), prev_actor.get(field_name)):
 				actor_delta[field_name] = curr_actor.get(field_name)
 		if actor_delta.size() > 1:
