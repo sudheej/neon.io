@@ -1,0 +1,16 @@
+{
+  "msg_type": "game_event",
+  "protocol_version": "net.v1",
+  "session_id": "sess_001",
+  "player_id": "server",
+  "timestamp_ms": 1730000001000,
+  "seq": 210,
+  "payload": {
+    "event": {
+      "event_type": "kill_reward",
+      "actor_id": "player_42",
+      "payload": {"credits": 10.5},
+      "timestamp": 1730000001.0
+    }
+  }
+}

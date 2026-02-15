@@ -1,0 +1,13 @@
+{
+  "msg_type": "match_join_ack",
+  "protocol_version": "net.v1",
+  "session_id": "sess_001",
+  "player_id": "player_42",
+  "timestamp_ms": 1730000000700,
+  "seq": 8,
+  "payload": {
+    "match_id": "match_7781",
+    "actor_id": "player_42",
+    "server_tick": 120
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "msg_type": "disconnect_reason",
+  "protocol_version": "net.v1",
+  "session_id": "sess_001",
+  "player_id": "server",
+  "timestamp_ms": 1730000001500,
+  "seq": 215,
+  "payload": {
+    "reason": "server_shutdown",
+    "retryable": true
+  }
+}

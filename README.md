@@ -23,7 +23,7 @@ World (presentation root)
     |-- AgentInputSource
     |-- AgentBridge
     |   |-- LocalAgentStub (disabled by default)
-    |-- NetworkAdapter (local stub)
+    |-- NetworkAdapter (local loopback transport)
 ```
 
 ## Folder Structure
@@ -57,11 +57,56 @@ World (presentation root)
 /scripts             # Compatibility wrappers for original paths
 /docs
   ARCHITECTURE.md
+  network/protocol_v1.md
 ```
 
 ## How To Run
 ```
 ./run_game.sh
+```
+Startup now opens a mode selector in `Main`:
+- `offline_ai`: starts local world immediately.
+- `mixed` / `human_only`: opens lobby queue flow.
+
+For `mixed` / `human_only`, start the lobby service first:
+```bash
+cd backend/lobby-service
+python3 app.py
+```
+Default lobby URL is `http://127.0.0.1:8080`.
+Override if needed:
+- env: `NEON_LOBBY_URL=http://<host>:<port> ./run_game.sh`
+- arg: `./run_game.sh --lobby-url=http://<host>:<port>`
+
+Useful startup overrides:
+- `--skip-mode-select` (bypass menu)
+- `NEON_MODE=offline_ai|mixed|human_only`
+- `NEON_SERVER=1` or `--server` (headless/server path bypasses menu)
+- `--test-human-mode` (starts lobby + human_only match server + two clients)
+  - test window overrides:
+  - `NEON_TEST_CLIENT_RESOLUTION` (default `960x540`)
+  - `NEON_TEST_CLIENT_LEFT_POS` (default `0,0`)
+  - `NEON_TEST_CLIENT_RIGHT_POS` (default `970,0`)
+
+## First 5 Minutes (New Agent Session)
+Run these in order before coding:
+```bash
+./run_game.sh --headless --script res://scripts/tests/network_protocol_validator.gd
+./run_game.sh --headless --script res://scripts/tests/authority_guard_smoke.gd
+timeout 12 ./run_game.sh
+```
+
+If gameplay appears frozen (player + AI not moving), check `GameWorld._validate_command()` first.
+Local/offline commands must not be treated as network commands unless payload includes `__net`.
+
+Dedicated ENet match server (headless):
+```
+NEON_SERVER=1 NEON_MODE=mixed NEON_NETWORK_ROLE=server NEON_TRANSPORT=enet NEON_PORT=7000 NEON_MAX_PLAYERS=10 ./run_game.sh --headless
+```
+
+ENet client:
+```
+NEON_MODE=mixed NEON_NETWORK_ROLE=client NEON_TRANSPORT=enet NEON_HOST=127.0.0.1 NEON_PORT=7000 ./run_game.sh
 ```
 
 Debug collision overlay:
@@ -77,6 +122,7 @@ Debug collision overlay:
 - Q: toggle range ring
 - 1/2/3/4: buy ammo pack + select weapon (Laser/Stun/Homing/Spread)
 - R: restart
+- Esc: open lobby
 
 ## Command Pipeline (Core Contract)
 All gameplay input now routes through commands:
@@ -164,10 +210,53 @@ This will feed periodic `MOVE` commands to the player via the AgentBridge.
 ## Networking Readiness
 Ready now:
 - Command/event boundaries exist and are isolated in `GameWorld`.
-- `NetworkAdapter` is a clean stub where replication can be added without touching gameplay logic.
+- `NetworkAdapter` validates a versioned envelope (`net.v1`) and routes command/state/event messages.
+- `LocalNetworkAdapter` supports loopback simulation for commands/state/events with optional latency.
 - `GameState` snapshots are JSON-ready dictionaries.
+- Protocol examples exist under `docs/network/examples/`.
+- ENet transport path is available in `NetworkAdapter` (CLI flags and env overrides).
+- ENet single-process smoke script is fixed for Godot 4.5 branch multiplayer API:
+  - `./run_game.sh --headless --script res://scripts/tests/enet_single_process_smoke.gd`
+- Lobby UI scene exists at `scenes/Lobby.tscn` for local mode selection and queue->match flow.
+- Lobby scene performs real HTTP flow: `hello -> auth -> queue_join -> queue_status -> match_assigned`.
+- Server-side command guardrails in `GameWorld`: actor ownership, per-actor rate limiting, replay sequence drop, future timestamp drop.
+- Local-player-by-actor-id binding is implemented in `World` (HUD/camera/game-over/input actor routing).
+- Actor lifecycle registration/unregistration API is available in `GameWorld`.
+- Reconciliation primitives are wired: `state_ack` and `resync_request`.
+- Environment-based startup is supported for this binary:
+  - `NEON_MODE=offline_ai|mixed|human_only`
+  - `NEON_NETWORK_ROLE=offline|client|server`
+  - `NEON_TRANSPORT=local|enet`
+  - `NEON_HOST`, `NEON_PORT`, `NEON_MAX_PLAYERS`, `NEON_SERVER`
+
+Validate protocol examples:
+```
+./run_game.sh --headless --script res://scripts/tests/network_protocol_validator.gd
+```
+
+Validate ENet adapter path:
+```bash
+./scripts/tests/run_enet_smoke.sh
+```
+
+ENet smoke caveat:
+- In this sandbox, Godot may crash before ENet smoke script runtime.
+- Validate ENet smoke on a normal host runtime before concluding ENet path health.
 
 Deferred for later:
-- Real transport (WebSocket/HTTP/gRPC).
-- Authority reconciliation, prediction, rollback.
-- Deterministic tick synchronization.
+- Compact `state_delta` generation + deterministic client apply path.
+- Match director service and server allocation orchestration.
+- Full reconnect/session recovery policy.
+- Deployment, observability, and load/rollout phases from `TODO.md`.
+
+## Backend Scaffold
+- `backend/lobby-service/app.py` provides an in-memory lobby + queue API.
+
+Run:
+```bash
+cd backend/lobby-service
+python3 app.py
+```
+
+Note:
+- In this sandbox, binding/listening sockets may be restricted; run backend service tests outside sandbox if bind fails.

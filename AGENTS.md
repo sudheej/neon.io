@@ -7,6 +7,7 @@ Quick run:
 - When suggesting playtests, run `./run_game.sh` first and check the console for errors before recommending the user play.
 - `./run_game.sh --verbose` is supported for troubleshooting.
 - Always run `./run_game.sh` and confirm stdout has no errors before presenting any next steps.
+- Startup opens mode selection UI first (`offline_ai` / `mixed` / `human_only`) unless auto-bypassed in headless/server/env-driven runs.
 
 Core scenes:
 - `scenes/Main.tscn` -> `scenes/World.tscn` (wrappers for `src/presentation/scenes/*`)
@@ -16,7 +17,7 @@ Architecture (new):
 - `src/domain/world/GameWorld.gd` is the command boundary.
 - Input pipeline: `InputSource -> CommandQueue -> GameWorld.apply(command) -> Events -> Presentation`.
 - Agent boundary: `src/infrastructure/agent/AgentBridge.gd` + `LocalAgentStub.gd` (disabled by default).
-- Network boundary: `src/infrastructure/network/NetworkAdapter.gd` (stub).
+- Network boundary: `src/infrastructure/network/NetworkAdapter.gd` (concrete local + ENet path).
 
 Controls:
 - WASD / arrows: move
@@ -95,3 +96,4 @@ Notes:
   - `critical.wav` and `powerup.wav` live under `assets/audio/ui/`
   - `powerup.wav` is intentionally disabled in gameplay flow for now
   - run `./run_game.sh --headless --import` after moving/adding audio assets to refresh `.import` remaps
+- Multiplayer phased implementation and handoff status are tracked in `TODO.md` (use it as source of truth for pending/complete).

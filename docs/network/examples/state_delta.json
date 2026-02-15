@@ -1,0 +1,19 @@
+{
+  "msg_type": "state_delta",
+  "protocol_version": "net.v1",
+  "session_id": "sess_001",
+  "player_id": "server",
+  "timestamp_ms": 1730000000950,
+  "seq": 201,
+  "payload": {
+    "state": {
+      "tick": 201,
+      "changed": [
+        {
+          "id": "player_42",
+          "position": {"x": 414.1, "y": 172.0}
+        }
+      ]
+    }
+  }
+}

@@ -135,6 +135,11 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if player == null or not is_instance_valid(player):
 		return
+	var id_val = player.get("actor_id")
+	if id_val != null:
+		var resolved_actor_id: String = String(id_val)
+		if not resolved_actor_id.is_empty():
+			actor_id = resolved_actor_id
 	var targets = get_tree().get_nodes_in_group("combatants")
 	var pressure = _enemy_pressure(player, targets)
 	_update_priority_target(player, targets, delta)

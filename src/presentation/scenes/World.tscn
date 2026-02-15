@@ -82,12 +82,14 @@ script = ExtResource("6")
 script = ExtResource("7")
 actor_id = "player"
 command_queue_path = NodePath("../CommandQueue")
+network_adapter_path = NodePath("../NetworkAdapter")
 actor_path = NodePath("../../Player")
 
 [node name="AgentInputSource" type="Node" parent="GameWorld"]
 script = ExtResource("8")
 actor_id = "player"
 command_queue_path = NodePath("../CommandQueue")
+network_adapter_path = NodePath("../NetworkAdapter")
 agent_bridge_path = NodePath("../AgentBridge")
 
 [node name="AgentBridge" type="Node" parent="GameWorld"]

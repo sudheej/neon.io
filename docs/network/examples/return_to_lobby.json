@@ -1,0 +1,12 @@
+{
+  "msg_type": "return_to_lobby",
+  "protocol_version": "net.v1",
+  "session_id": "sess_001",
+  "player_id": "server",
+  "timestamp_ms": 1730000001300,
+  "seq": 213,
+  "payload": {
+    "queue": "mixed",
+    "auto_requeue": true
+  }
+}

@@ -41,6 +41,8 @@ const BAR_FILL := Color(0.2, 0.95, 1.0, 0.9)
 const RING_BG := Color(0.2, 0.5, 0.6, 0.4)
 const RING_FILL := Color(0.2, 0.95, 1.0, 0.95)
 
+@export var target_actor_id: String = "player"
+
 var player: Node = null
 var weapon_system: Node = null
 var selected_weapon: int = WeaponSlot.WeaponType.LASER
@@ -71,10 +73,28 @@ func _process(delta: float) -> void:
 
 func _resolve_player() -> void:
 	if player == null or not is_instance_valid(player):
-		player = get_tree().get_first_node_in_group("player")
+		player = _find_player_by_actor_id(target_actor_id)
+		if player == null:
+			player = get_tree().get_first_node_in_group("player")
 		weapon_system = null
 	if weapon_system == null and player != null and player.has_node("WeaponSystem"):
 		weapon_system = player.get_node("WeaponSystem")
+
+func set_target_actor_id(actor_id: String) -> void:
+	target_actor_id = actor_id
+	player = null
+	weapon_system = null
+	_resolve_player()
+
+func _find_player_by_actor_id(actor_id: String) -> Node:
+	if actor_id.is_empty():
+		return null
+	for node in get_tree().get_nodes_in_group("combatants"):
+		if node == null or not is_instance_valid(node):
+			continue
+		if String(node.get("actor_id")) == actor_id:
+			return node as Node
+	return null
 
 func _smooth(value: float, target: float, delta: float, speed: float) -> float:
 	return lerp(value, target, 1.0 - exp(-speed * delta))
