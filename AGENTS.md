@@ -8,6 +8,11 @@ Quick run:
 - `./run_game.sh --verbose` is supported for troubleshooting.
 - Always run `./run_game.sh` and confirm stdout has no errors before presenting any next steps.
 - Startup opens mode selection UI first (`offline_ai` / `mixed` / `human_only`) unless auto-bypassed in headless/server/env-driven runs.
+- Test orchestration shortcuts:
+  - `./run_game.sh --test-human-mode` starts lobby + human_only server + two clients.
+  - `./run_game.sh --test-mixed-mode` starts lobby + mixed server + test clients.
+  - both test modes enable net debug HUD (`match`, `actor`, `remotes`, `conn`, `role`) and net logs.
+  - mixed test defaults `MIN_PLAYERS_TO_START_MIXED=2` unless explicitly overridden, so both clients land in the same match.
 
 Core scenes:
 - `scenes/Main.tscn` -> `scenes/World.tscn` (wrappers for `src/presentation/scenes/*`)
@@ -102,4 +107,6 @@ Notes:
   - run `./run_game.sh --headless --import` after moving/adding audio assets to refresh `.import` remaps
 - Multiplayer phased implementation and handoff status are tracked in `TODO.md` (use it as source of truth for pending/complete).
 - `--test-human-mode` current expected HUD state after queueing both clients:
+  - same `match`, different `actor`, `conn=1`, `role=client`, `remotes=1`
+- `--test-mixed-mode` current expected HUD state after queueing both clients:
   - same `match`, different `actor`, `conn=1`, `role=client`, `remotes=1`

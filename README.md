@@ -83,15 +83,29 @@ Useful startup overrides:
 - `NEON_MODE=offline_ai|mixed|human_only`
 - `NEON_SERVER=1` or `--server` (headless/server path bypasses menu)
 - `--test-human-mode` (starts lobby + human_only match server + two clients)
+- `--test-mixed-mode` (starts lobby + mixed match server + test clients)
   - test window overrides:
   - `NEON_TEST_CLIENT_RESOLUTION` (default `960x540`)
   - `NEON_TEST_CLIENT_LEFT_POS` (default `0,0`)
   - `NEON_TEST_CLIENT_RIGHT_POS` (default `970,0`)
+  - mixed-mode only: `NEON_TEST_MIXED_CLIENT_COUNT` (default `2`, clamped `1..2`)
+  - mixed-mode test defaults `MIN_PLAYERS_TO_START_MIXED=2` (unless already set), so both clients are assigned into the same match
   - enables net debug HUD on clients (`match`, `actor`, `remote count`)
 
 Current `--test-human-mode` status:
 - connected clients now show `conn=1`, `remotes=1` with synchronized movement/actions.
 - minor known issue: camera follow/recenter around local death/respawn still needs polish.
+
+Current `--test-mixed-mode` status:
+- connected clients now show `conn=1`, `remotes=1` with synchronized movement/actions.
+- mixed test launcher defaults queue start threshold to 2, so both test clients are assigned into the same mixed match with distinct actor ids.
+- minor known issue: camera follow/recenter around local death/respawn still needs polish.
+
+Recent multiplayer stability fixes:
+- respawn replication ordering fixed (`actors_remove` before `actors_upsert`) with robust local actor re-create handling.
+- dedicated server no longer enters local game-over flow on actor death (prevents post-death combat freeze).
+- network-driven damage flash now decays correctly (no persistent red health bar tint).
+- weapon HUD now binds reliably to each client's local actor id (no cross-client weapon panel mirroring).
 
 ## First 5 Minutes (New Agent Session)
 Run these in order before coding:

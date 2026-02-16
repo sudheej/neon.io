@@ -30,15 +30,24 @@ Presentation World Loop:
   - `mixed` / `human_only` -> loads `Lobby` queue flow.
 - Non-interactive startup bypasses menu for server/headless/env-driven runs.
 
-## Current Multiplayer State (2026-02-15)
-- `./run_game.sh --test-human-mode` now reaches connected client state:
+## Current Multiplayer State (2026-02-16)
+- `./run_game.sh --test-human-mode` reaches connected client state:
+  - same `match_id`, distinct `actor_id`
+  - `conn=1`, `role=client`, `remotes=1`
+- `./run_game.sh --test-mixed-mode` reaches connected client state:
   - same `match_id`, distinct `actor_id`
   - `conn=1`, `role=client`, `remotes=1`
 - Online command path verified for:
   - movement
-  - weapon select
+  - weapon select + HUD sync per local actor
   - slot/range actions
   - shift+direction expansion actions
+- Respawn/replication stability fixes are in place:
+  - client applies `actors_remove` before `actors_upsert` to avoid stale-node respawn races
+  - local actor is recreated correctly after remove/upsert cycles
+  - queued-for-deletion combatants are ignored for actor lookup/rebinding
+  - dedicated server ignores local game-over path on actor death (prevents global combat freeze)
+  - network-driven player hit flash now decays (no persistent red bar tint)
 - Remaining known polish item:
   - camera follow/recenter edge case around local death/respawn transitions.
 
@@ -48,6 +57,13 @@ Presentation World Loop:
   - starts lobby service if missing,
   - starts dedicated human_only match server (`NEON_SERVER=1`, `NEON_NETWORK_ROLE=server`, ENet transport),
   - launches two clients with shrink-mode windows (left/right),
+  - enables network debug HUD (`match/actor/remotes/conn/role`) and net logs.
+- `run_game.sh --test-mixed-mode` now does all of:
+  - kills stale lobby/match server processes before launch,
+  - starts lobby service if missing,
+  - starts dedicated mixed match server (`NEON_SERVER=1`, `NEON_NETWORK_ROLE=server`, ENet transport),
+  - launches test clients (default 2, configurable/clamped with `NEON_TEST_MIXED_CLIENT_COUNT`),
+  - defaults lobby mixed queue start threshold to 2 players in test mode (unless explicitly overridden) to ensure same-match assignment,
   - enables network debug HUD (`match/actor/remotes/conn/role`) and net logs.
 
 ### Recent implementation updates

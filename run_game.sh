@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERBOSE_FLAG=""
 EXTRA_ARGS=()
 TEST_HUMAN_MODE=0
+TEST_MIXED_MODE=0
 for arg in "$@"; do
   case "$arg" in
     --verbose)
@@ -12,6 +13,9 @@ for arg in "$@"; do
       ;;
     --test-human-mode)
       TEST_HUMAN_MODE=1
+      ;;
+    --test-mixed-mode)
+      TEST_MIXED_MODE=1
       ;;
     --hud-shot|--hud-shot-delay=*|--hud-shot-path=*)
       EXTRA_ARGS+=("$arg")
@@ -57,6 +61,9 @@ start_lobby_service() {
   echo "[run_game] Starting lobby service at ${LOBBY_HOST_DEFAULT}:${LOBBY_PORT_DEFAULT}"
   local min_human="${MIN_PLAYERS_TO_START_HUMAN_ONLY:-2}"
   local min_mixed="${MIN_PLAYERS_TO_START_MIXED:-1}"
+  if [[ "$TEST_MIXED_MODE" -eq 1 ]] && [[ -z "${MIN_PLAYERS_TO_START_MIXED:-}" ]]; then
+    min_mixed=2
+  fi
   (
     cd "$ROOT_DIR/backend/lobby-service"
     LOBBY_HOST="$LOBBY_HOST_DEFAULT" \
@@ -86,13 +93,15 @@ stop_existing_test_servers() {
   pkill -f "NEON_NETWORK_ROLE=server" >/dev/null 2>&1 || true
   pkill -f "NEON_SERVER=1" >/dev/null 2>&1 || true
   pkill -f "NEON_MODE=human_only" >/dev/null 2>&1 || true
+  pkill -f "NEON_MODE=mixed" >/dev/null 2>&1 || true
   pkill -f -- "--skip-mode-select" >/dev/null 2>&1 || true
   pkill -f "/tmp/neon_human_client_" >/dev/null 2>&1 || true
+  pkill -f "/tmp/neon_mixed_client_" >/dev/null 2>&1 || true
   if command -v fuser >/dev/null 2>&1; then
     fuser -k 7000/udp >/dev/null 2>&1 || true
     fuser -k "${LOBBY_PORT_DEFAULT}/tcp" >/dev/null 2>&1 || true
   fi
-  rm -f /tmp/neon_lobby.pid /tmp/neon_human_server.pid
+  rm -f /tmp/neon_lobby.pid /tmp/neon_human_server.pid /tmp/neon_mixed_server.pid
   sleep 0.3
 }
 
@@ -133,6 +142,20 @@ start_human_mode_server() {
   echo $! >/tmp/neon_human_server.pid
 }
 
+start_mixed_mode_server() {
+  echo "[run_game] Starting mixed match server on udp:7000"
+  nohup env \
+    NEON_SERVER=1 \
+    NEON_MODE=mixed \
+    NEON_NETWORK_ROLE=server \
+    NEON_TRANSPORT=enet \
+    NEON_NET_LOG=1 \
+    NEON_PORT=7000 \
+    NEON_MAX_PLAYERS=10 \
+    "$BIN" $VERBOSE_FLAG --headless --path "$ROOT_DIR" >/tmp/neon_mixed_server.log 2>&1 &
+  echo $! >/tmp/neon_mixed_server.pid
+}
+
 launch_human_mode_clients() {
   local client_resolution="${NEON_TEST_CLIENT_RESOLUTION:-960x540}"
   local left_position="${NEON_TEST_CLIENT_LEFT_POS:-0,0}"
@@ -157,6 +180,37 @@ launch_human_mode_clients() {
   done
 }
 
+launch_mixed_mode_clients() {
+  local client_resolution="${NEON_TEST_CLIENT_RESOLUTION:-960x540}"
+  local left_position="${NEON_TEST_CLIENT_LEFT_POS:-0,0}"
+  local right_position="${NEON_TEST_CLIENT_RIGHT_POS:-970,0}"
+  local positions=("$left_position" "$right_position")
+  local client_count="${NEON_TEST_MIXED_CLIENT_COUNT:-2}"
+  if [[ "$client_count" -lt 1 ]]; then
+    client_count=1
+  fi
+  if [[ "$client_count" -gt 2 ]]; then
+    client_count=2
+  fi
+  for idx in $(seq 1 "$client_count"); do
+    local pos="${positions[$((idx - 1))]}"
+    echo "[run_game] Launching mixed client ${idx}"
+    nohup env \
+      NEON_MODE=mixed \
+      NEON_AUTO_START=1 \
+      NEON_LOBBY_URL="$LOBBY_URL" \
+      NEON_NET_DEBUG_HUD=1 \
+      NEON_NET_LOG=1 \
+      "$BIN" $VERBOSE_FLAG \
+      --path "$ROOT_DIR" \
+      --windowed \
+      --resolution "$client_resolution" \
+      --position "$pos" \
+      --net-debug-hud \
+      --skip-mode-select >/tmp/neon_mixed_client_${idx}.log 2>&1 &
+  done
+}
+
 if [[ "$TEST_HUMAN_MODE" -eq 1 ]]; then
   stop_existing_test_servers
   ensure_lobby_service
@@ -168,6 +222,21 @@ if [[ "$TEST_HUMAN_MODE" -eq 1 ]]; then
   echo "[run_game] human mode test started."
   echo "[run_game] If clients are in lobby, press Enter in both windows to queue."
   echo "[run_game] Client window layout: res=${NEON_TEST_CLIENT_RESOLUTION:-960x540}, left=${NEON_TEST_CLIENT_LEFT_POS:-0,0}, right=${NEON_TEST_CLIENT_RIGHT_POS:-970,0}"
+  exit 0
+fi
+
+if [[ "$TEST_MIXED_MODE" -eq 1 ]]; then
+  stop_existing_test_servers
+  ensure_lobby_service
+  if ! is_match_server_listening; then
+    start_mixed_mode_server
+    sleep 1
+  fi
+  launch_mixed_mode_clients
+  echo "[run_game] mixed mode test started."
+  echo "[run_game] If clients are in lobby, press Enter to queue."
+  echo "[run_game] Client window layout: res=${NEON_TEST_CLIENT_RESOLUTION:-960x540}, left=${NEON_TEST_CLIENT_LEFT_POS:-0,0}, right=${NEON_TEST_CLIENT_RIGHT_POS:-970,0}"
+  echo "[run_game] Mixed client count: ${NEON_TEST_MIXED_CLIENT_COUNT:-2} (clamped to 1..2)"
   exit 0
 fi
 

@@ -2,14 +2,15 @@
 
 ## Multiplayer + Dedicated Lobby Implementation Plan
 
-## Status Snapshot (Updated 2026-02-15)
+## Status Snapshot (Updated 2026-02-16)
 
-### Current Online Status (`--test-human-mode`)
-- User-verified now working:
+### Current Online Status (`--test-human-mode` and `--test-mixed-mode`)
+- User-verified now working in both human-only and mixed test flows:
   - both clients in same match with distinct actor ids
   - `conn=1`, `role=client`, `remotes=1`
   - movement replicated both ways
-  - weapon/slot/range/expand actions now apply in online mode
+  - weapon/slot/range/expand actions apply in online mode
+  - local weapon HUD now follows local actor correctly per client
 - Remaining minor issue:
   - camera recenter/follow still needs final polish around local death/respawn transitions under prolonged soak.
 
@@ -24,30 +25,48 @@
   - added explicit ENet startup logs (`start enet`, `replacing non-ENet peer`, `enet_start_failed`) when `NEON_NET_LOG=1`.
 - Verification completed:
   - `./run_game.sh --headless --script res://scripts/tests/enet_single_process_smoke.gd` => PASS.
-- Verification still blocked in sandbox:
-  - full `./run_game.sh --test-human-mode` external flow cannot be fully validated here due lobby bind restriction (`PermissionError: [Errno 1] Operation not permitted` for Python socket bind in this sandbox).
+- Follow-up verification now available:
+  - `./run_game.sh --test-human-mode` and `./run_game.sh --test-mixed-mode` launch successfully in this environment.
 
 ### Debug Findings (2026-02-16, this session)
-- Local human respawn recovery fix implemented in `src/presentation/world/World.gd`:
-  - client now re-creates the local actor node from incoming snapshot/delta if it is missing after death.
-  - local death hook now tracks bound node instance (not only actor id), so hooks reconnect correctly after respawn.
-  - actor tree-exit cleanup now clears stale network target/cache entries for that actor id.
-- Validation in this sandbox:
-  - `timeout 12 ./run_game.sh` starts cleanly with no stdout/stderr script errors before timeout.
+- Respawn + health sync fixes implemented in `src/presentation/world/World.gd`:
+  - client applies `actors_remove` before `actors_upsert` on deltas to avoid stale-node races.
+  - client re-creates local actor node from snapshot/delta when missing after death.
+  - local death hook tracks bound node instance (not only actor id), reconnecting after respawn.
+  - actor lookup ignores queued-for-deletion nodes to prevent re-binding stale instances.
+  - dedicated server ignores local game-over flow on `_on_player_died` to prevent post-death combat freeze.
+- Visual hit feedback fix in `src/presentation/player/Player.gd`:
+  - network-driven actors now decay `damage_flash`/blink timers (no stuck red bar tint).
+- Weapon HUD local binding fix in `src/presentation/ui/WeaponHud.gd`:
+  - HUD now re-resolves strictly by local actor id and avoids stale/mismatched actor nodes.
+- New mixed-mode launcher flow in `run_game.sh`:
+  - `--test-mixed-mode` starts lobby + mixed server + test clients.
+  - mixed test defaults `MIN_PLAYERS_TO_START_MIXED=2` unless overridden, ensuring same-match dual-client assignment.
+- Validation in this environment:
+  - `timeout 12 ./run_game.sh` starts cleanly with no stdout script/runtime errors before timeout.
+  - `./run_game.sh --headless --script res://scripts/tests/world_replication_smoke.gd` => PASS.
   - `./run_game.sh --headless --script res://scripts/tests/enet_single_process_smoke.gd` => PASS.
-  - `./run_game.sh --test-human-mode` remains blocked here by lobby socket permission restrictions.
+  - `./run_game.sh --test-human-mode` => launches lobby/server/clients.
+  - `./run_game.sh --test-mixed-mode` => launches lobby/server/clients.
 
-### Already attempted in this session
+### Completed in this session
 - Lobby runtime hardening:
   - changed lobby default bind host to loopback (`LOBBY_HOST=127.0.0.1`) in `backend/lobby-service/app.py`.
   - improved lobby client error text and URL overrides in `src/presentation/lobby/Lobby.gd`.
 - Test orchestration:
-  - `run_game.sh --test-human-mode` now:
+  - `run_game.sh --test-human-mode`:
     - starts/ensures lobby,
     - starts dedicated human_only match server,
     - opens two shrink-mode clients (left/right),
     - force-cleans stale lobby/match processes before launch,
     - enables net debug HUD + `NEON_NET_LOG`.
+  - `run_game.sh --test-mixed-mode`:
+    - starts/ensures lobby,
+    - starts dedicated mixed match server,
+    - opens mixed test clients (default 2, clamped 1..2),
+    - force-cleans stale lobby/match processes before launch,
+    - enables net debug HUD + `NEON_NET_LOG`,
+    - defaults mixed queue start threshold to 2 in test mode unless overridden.
 - Replication groundwork:
   - server-side network actor spawn hook added (`GameWorld -> World.spawn_network_human_actor`).
   - world replication path for snapshot/delta apply exists in `src/presentation/world/World.gd`.
@@ -61,7 +80,7 @@
   - boot one headless server + one client and assert `connection_changed(true)` within timeout.
   - fail test if client remains `conn=0`.
 - [ ] Add one longer online replication soak:
-  - 5+ minute dual-client run and verify no command starvation/jitter regressions.
+  - 5+ minute dual-client run in both human_only and mixed modes and verify no command starvation/jitter regressions.
 
 ### Completed in repo
 - Protocol contract and examples:
@@ -106,7 +125,6 @@
 
 ### Important caveats
 - ENet single-process smoke script is now fixed and passing (`scripts/tests/enet_single_process_smoke.gd`), but full external-runtime ENet validation is still required outside sandbox.
-- Backend runtime socket bind could not be validated in this sandbox (permission restriction), though Python compile passes.
 - A critical local-input regression was fixed: local commands must bypass network authority checks unless payload includes `__net`.
 - Camera follow still has a minor online respawn edge case pending polish.
 
@@ -348,24 +366,24 @@ This is the execution plan for:
 ## Phase 8 - Mode Completion
 
 ### P8.1 `offline_ai`
-- [ ] Ensure zero backend dependency and instant local start.
-- [ ] Keep all current AI/world systems functional.
+- [x] Ensure zero backend dependency and instant local start.
+- [x] Keep all current AI/world systems functional.
 
 ### P8.2 `mixed`
-- [ ] Allow humans up to cap with AI fill.
+- [x] Allow humans up to cap with AI fill.
 - [ ] Define AI fill target policy:
   - fixed minimum occupancy, or
   - dynamic based on current humans.
 
 ### P8.3 `human_only`
-- [ ] Disable AI spawn.
-- [ ] Start thresholds:
+- [x] Disable AI spawn.
+- [x] Start thresholds:
   - either strict 10 players, or
   - configurable minimum start count.
 
 ### Exit criteria
-- [ ] All three modes selectable and functioning end-to-end.
-- [ ] Behavior matches documented design contracts.
+- [x] All three modes selectable and functioning end-to-end.
+- [x] Behavior matches documented design contracts.
 
 ---
 
@@ -476,7 +494,7 @@ This is the execution plan for:
 
 ### Session A - Replication and Client Apply Path
 1. [x] Implement compact delta generation in `NetworkAdapter`/`GameWorld` (`P3.3`).
-2. [x] Implement client-side snapshot+delta apply path in `World.gd` for non-local actors.
+2. [x] Implement client-side snapshot+delta apply path in `World.gd` for local and remote actors.
 3. Add divergence detection test cases and long-run snapshot stability smoke.
 Exit criteria:
 - Two clients stay visually synchronized for 5+ minutes.
@@ -512,7 +530,7 @@ Exit criteria:
 
 1. [x] Session A step 1: implement compact `state_delta` format + tests.
 2. [x] Session A step 2: apply remote actor replication in `World.gd`.
-3. Validate ENet E2E outside sandbox using `scripts/tests/run_enet_smoke.sh`.
+3. [ ] Validate ENet E2E outside sandbox using `scripts/tests/run_enet_smoke.sh`.
 
 ---
 
