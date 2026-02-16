@@ -72,13 +72,23 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _resolve_player() -> void:
+	var expected_actor_id := _resolve_target_actor_id()
+	if player != null and is_instance_valid(player):
+		if player.is_queued_for_deletion():
+			player = null
+			weapon_system = null
+		elif not expected_actor_id.is_empty() and String(player.get("actor_id")) != expected_actor_id:
+			player = null
+			weapon_system = null
 	if player == null or not is_instance_valid(player):
-		player = _find_player_by_actor_id(target_actor_id)
-		if player == null:
+		player = _find_player_by_actor_id(expected_actor_id)
+		if player == null and expected_actor_id == "player":
 			player = get_tree().get_first_node_in_group("player")
 		weapon_system = null
 	if weapon_system == null and player != null and player.has_node("WeaponSystem"):
 		weapon_system = player.get_node("WeaponSystem")
+	elif weapon_system != null and (not is_instance_valid(weapon_system) or weapon_system.get_parent() != player):
+		weapon_system = null
 
 func set_target_actor_id(actor_id: String) -> void:
 	target_actor_id = actor_id
@@ -89,12 +99,34 @@ func set_target_actor_id(actor_id: String) -> void:
 func _find_player_by_actor_id(actor_id: String) -> Node:
 	if actor_id.is_empty():
 		return null
+	var world := get_tree().get_first_node_in_group("world")
+	if world != null:
+		var local_candidate = world.get("local_player")
+		if (
+			local_candidate != null
+			and is_instance_valid(local_candidate)
+			and not local_candidate.is_queued_for_deletion()
+			and String(local_candidate.get("actor_id")) == actor_id
+		):
+			return local_candidate as Node
 	for node in get_tree().get_nodes_in_group("combatants"):
 		if node == null or not is_instance_valid(node):
+			continue
+		if node.is_queued_for_deletion():
 			continue
 		if String(node.get("actor_id")) == actor_id:
 			return node as Node
 	return null
+
+func _resolve_target_actor_id() -> String:
+	if not target_actor_id.is_empty():
+		return target_actor_id
+	var world := get_tree().get_first_node_in_group("world")
+	if world != null:
+		var world_actor_id := String(world.get("local_actor_id"))
+		if not world_actor_id.is_empty():
+			return world_actor_id
+	return "player"
 
 func _smooth(value: float, target: float, delta: float, speed: float) -> float:
 	return lerp(value, target, 1.0 - exp(-speed * delta))
