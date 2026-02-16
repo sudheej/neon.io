@@ -236,6 +236,8 @@ func _snap_camera_to_local_player() -> void:
 
 func _resolve_local_player() -> Node2D:
 	if player != null and is_instance_valid(player):
+		if player.is_queued_for_deletion():
+			return null
 		var player_actor_id = String(player.get("actor_id"))
 		if player_actor_id == local_actor_id or local_actor_id == "player":
 			return player
@@ -605,6 +607,8 @@ func get_kill_reward_multiplier() -> float:
 	return 1.0
 
 func _on_player_died(_victim: Node) -> void:
+	if dedicated_server:
+		return
 	if _should_return_to_lobby_on_death():
 		_return_to_lobby()
 		return
@@ -1154,6 +1158,7 @@ func _on_network_state_received(state: Dictionary) -> void:
 
 func _apply_full_actor_state(raw_actors) -> void:
 	var present_remote_ids: Dictionary = {}
+	var local_present := false
 	if not (raw_actors is Array):
 		return
 	for raw_actor in raw_actors:
@@ -1165,18 +1170,31 @@ func _apply_full_actor_state(raw_actors) -> void:
 			continue
 		var actor: Node2D = null
 		if actor_id == local_actor_id:
+			local_present = true
 			actor = _ensure_local_network_actor(actor_data)
 		else:
 			present_remote_ids[actor_id] = true
 			actor = _ensure_replicated_actor(actor_id, actor_data)
 		if actor != null:
 			_apply_actor_state(actor, actor_data)
+	if not local_present:
+		_remove_local_network_actor()
 	for actor_id in _replicated_actor_ids.keys():
 		var id := String(actor_id)
 		if not present_remote_ids.has(id):
 			_remove_replicated_actor(id)
 
 func _apply_delta_actor_state(data: Dictionary) -> void:
+	var removes_raw = data.get("actors_remove", [])
+	if removes_raw is Array:
+		for raw_id in removes_raw:
+			var actor_id := String(raw_id)
+			if actor_id.is_empty():
+				continue
+			if actor_id == local_actor_id:
+				_remove_local_network_actor()
+				continue
+			_remove_replicated_actor(actor_id)
 	var upserts_raw = data.get("actors_upsert", [])
 	if upserts_raw is Array:
 		for raw_actor in upserts_raw:
@@ -1193,13 +1211,6 @@ func _apply_delta_actor_state(data: Dictionary) -> void:
 				actor = _ensure_replicated_actor(actor_id, actor_data)
 			if actor != null:
 				_apply_actor_state(actor, actor_data)
-	var removes_raw = data.get("actors_remove", [])
-	if removes_raw is Array:
-		for raw_id in removes_raw:
-			var actor_id := String(raw_id)
-			if actor_id.is_empty():
-				continue
-			_remove_replicated_actor(actor_id)
 
 func _ensure_local_network_actor(actor_data: Dictionary) -> Node2D:
 	var existing := _find_actor_by_id(local_actor_id)
@@ -1207,7 +1218,12 @@ func _ensure_local_network_actor(actor_data: Dictionary) -> Node2D:
 		if existing.has_method("set_network_driven"):
 			existing.set_network_driven(true)
 		return existing
-	if player != null and is_instance_valid(player) and String(player.get("actor_id")) == "player":
+	if (
+		player != null
+		and is_instance_valid(player)
+		and not player.is_queued_for_deletion()
+		and String(player.get("actor_id")) == "player"
+	):
 		player.set("actor_id", local_actor_id)
 		if player.has_method("set_ai_enabled"):
 			player.set_ai_enabled(false)
@@ -1357,16 +1373,28 @@ func _same_cell_set(a: Array[Vector2i], b: Array[Vector2i]) -> bool:
 func _remove_replicated_actor(actor_id: String) -> void:
 	if actor_id.is_empty():
 		return
+	if actor_id == local_actor_id:
+		return
 	_replicated_actor_ids.erase(actor_id)
 	_net_target_pos_by_actor.erase(actor_id)
 	var actor = _find_actor_by_id(actor_id)
 	if actor != null and is_instance_valid(actor):
 		actor.queue_free()
 
+func _remove_local_network_actor() -> void:
+	_net_target_pos_by_actor.erase(local_actor_id)
+	var actor := _find_actor_by_id(local_actor_id)
+	if actor != null and is_instance_valid(actor):
+		if actor == _bound_local_death_actor:
+			_bound_local_death_actor = null
+		actor.queue_free()
+
 func _find_actor_by_id(actor_id: String) -> Node2D:
 	for node in get_tree().get_nodes_in_group("combatants"):
 		var actor := node as Node2D
 		if actor == null or not is_instance_valid(actor):
+			continue
+		if actor.is_queued_for_deletion():
 			continue
 		if String(actor.get("actor_id")) == actor_id:
 			return actor

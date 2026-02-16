@@ -108,6 +108,12 @@ func _process(delta: float) -> void:
 		queue_redraw()
 		return
 	if network_driven:
+		# Keep visual hit feedback transient even for replicated actors.
+		if damage_flash > 0.0:
+			damage_flash = maxf(damage_flash - delta, 0.0)
+		if damage_blink_timer > 0.0:
+			damage_blink_timer = maxf(damage_blink_timer - delta, 0.0)
+			damage_blink_phase = fmod(damage_blink_phase + delta * 22.0, TAU)
 		if spawn_timer > 0.0:
 			spawn_timer = maxf(spawn_timer - delta, 0.0)
 			var spawn_t := _get_spawn_t()

@@ -85,9 +85,14 @@ func _initialize() -> void:
 		quit(1)
 		return
 	if remote is Node2D:
-		var delta_pos := (remote as Node2D).global_position
-		if not delta_pos.is_equal_approx(Vector2(144.0, 80.0)):
-			push_error("world_replication_smoke failed: delta position not applied")
+		var targets: Dictionary = world.get("_net_target_pos_by_actor")
+		if not targets.has("remote_1"):
+			push_error("world_replication_smoke failed: missing network target after delta")
+			quit(1)
+			return
+		var target: Vector2 = targets["remote_1"]
+		if not target.is_equal_approx(Vector2(144.0, 80.0)):
+			push_error("world_replication_smoke failed: delta target not applied")
 			quit(1)
 			return
 
@@ -95,16 +100,77 @@ func _initialize() -> void:
 		"tick": 3,
 		"data": {
 			"time": 1.2,
-			"actors_remove": ["remote_1"]
+			"actors_remove": ["player", "remote_1"],
+			"actors_upsert": [
+				{
+					"id": "player",
+					"position": {"x": 18.0, "y": 16.0},
+					"health": 40.0,
+					"max_health": 40.0,
+					"is_ai": false
+				},
+				{
+					"id": "remote_1",
+					"position": {"x": 152.0, "y": 88.0},
+					"health": 40.0,
+					"max_health": 40.0,
+					"is_ai": false
+				}
+			]
 		}
 	})
 
 	await process_frame
 	await process_frame
 
+	var local_actor: Variant = world.call("_find_actor_by_id", "player")
+	if local_actor == null:
+		push_error("world_replication_smoke failed: local actor missing after remove+upsert")
+		quit(1)
+		return
+	if local_actor is Node2D:
+		var local_pos := (local_actor as Node2D).global_position
+		if not local_pos.is_equal_approx(Vector2(18.0, 16.0)):
+			push_error("world_replication_smoke failed: local actor respawn position not applied")
+			quit(1)
+			return
+
+	world.call("_on_network_state_received", {
+		"tick": 4,
+		"data": {
+			"time": 1.3,
+			"actors_upsert": [
+				{
+					"id": "player",
+					"health": 34.0
+				},
+				{
+					"id": "remote_1",
+					"health": 29.0
+				}
+			]
+		}
+	})
+
+	await process_frame
+
+	local_actor = world.call("_find_actor_by_id", "player")
+	if local_actor == null:
+		push_error("world_replication_smoke failed: local actor missing after post-respawn delta")
+		quit(1)
+		return
+	if absf(float(local_actor.get("health")) - 34.0) > 0.001:
+		push_error("world_replication_smoke failed: local health delta not applied after respawn")
+		quit(1)
+		return
+
 	remote = world.call("_find_actor_by_id", "remote_1")
-	if remote != null:
-		push_error("world_replication_smoke failed: replicated actor not removed")
+	if remote == null:
+		push_error("world_replication_smoke failed: remote actor missing after remove+upsert")
+		quit(1)
+		return
+	if absf(float(remote.get("health")) - 29.0) > 0.001:
+		push_error("world_replication_smoke failed: remote health delta not applied after respawn")
 		quit(1)
 		return
 
