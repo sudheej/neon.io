@@ -11,7 +11,7 @@
   - movement replicated both ways
   - weapon/slot/range/expand actions now apply in online mode
 - Remaining minor issue:
-  - camera recenter/follow has edge-case polish needed around local death/respawn transitions.
+  - camera recenter/follow still needs final polish around local death/respawn transitions under prolonged soak.
 
 ### Debug Findings (2026-02-15, this session)
 - Root cause identified in `src/infrastructure/network/NetworkAdapter.gd`:
@@ -26,6 +26,16 @@
   - `./run_game.sh --headless --script res://scripts/tests/enet_single_process_smoke.gd` => PASS.
 - Verification still blocked in sandbox:
   - full `./run_game.sh --test-human-mode` external flow cannot be fully validated here due lobby bind restriction (`PermissionError: [Errno 1] Operation not permitted` for Python socket bind in this sandbox).
+
+### Debug Findings (2026-02-16, this session)
+- Local human respawn recovery fix implemented in `src/presentation/world/World.gd`:
+  - client now re-creates the local actor node from incoming snapshot/delta if it is missing after death.
+  - local death hook now tracks bound node instance (not only actor id), so hooks reconnect correctly after respawn.
+  - actor tree-exit cleanup now clears stale network target/cache entries for that actor id.
+- Validation in this sandbox:
+  - `timeout 12 ./run_game.sh` starts cleanly with no stdout/stderr script errors before timeout.
+  - `./run_game.sh --headless --script res://scripts/tests/enet_single_process_smoke.gd` => PASS.
+  - `./run_game.sh --test-human-mode` remains blocked here by lobby socket permission restrictions.
 
 ### Already attempted in this session
 - Lobby runtime hardening:

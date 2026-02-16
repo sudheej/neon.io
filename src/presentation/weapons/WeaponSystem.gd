@@ -254,6 +254,7 @@ func get_slot_world_origin(slot) -> Vector2:
 func process_weapons(delta: float, enemies: Array[Node]) -> void:
 	if slots.is_empty() or shape == null:
 		return
+	var visual_only := _is_network_visual_only()
 	var used_targets: Dictionary = {}
 	for slot in slots:
 		slot_cooldowns[slot] = maxf(slot_cooldowns[slot] - delta, 0.0)
@@ -270,19 +271,21 @@ func process_weapons(delta: float, enemies: Array[Node]) -> void:
 			var max_active = max(1, slots.size() * HOMING_MAX_ACTIVE_PER_CELL)
 			if _count_homing_missiles_for_player() >= max_active:
 				continue
-		if get_weapon_ammo(weapon_type) <= 0:
-			if auto_reload and _try_auto_reload(weapon_type):
-				pass
-			else:
-				continue
+		if not visual_only:
+			if get_weapon_ammo(weapon_type) <= 0:
+				if auto_reload and _try_auto_reload(weapon_type):
+					pass
+				else:
+					continue
 
 		var target = _find_target_for_slot(slot, origin, slot.range, enemies, used_targets)
 		if target == null:
 			continue
 		used_targets[target] = true
 		_fire_at_target(slot, origin, target, enemies)
-		_consume_ammo(weapon_type, 1)
-		shots_fired_by_weapon[weapon_type] = int(shots_fired_by_weapon.get(weapon_type, 0)) + 1
+		if not visual_only:
+			_consume_ammo(weapon_type, 1)
+			shots_fired_by_weapon[weapon_type] = int(shots_fired_by_weapon.get(weapon_type, 0)) + 1
 		slot_cooldowns[slot] = weapon_cooldowns.get(weapon_type, FIRE_COOLDOWN)
 
 func get_shots_fired_by_weapon() -> Dictionary:
@@ -581,6 +584,12 @@ func _should_play_selection_sfx() -> bool:
 	if player == null or not is_instance_valid(player):
 		return false
 	return player.is_in_group("player")
+
+func _is_network_visual_only() -> bool:
+	if player == null or not is_instance_valid(player):
+		return false
+	return bool(player.get("network_driven"))
+
 func _load_imported_audio(source_path: String) -> AudioStream:
 	var import_path := source_path + ".import"
 	var cfg := ConfigFile.new()

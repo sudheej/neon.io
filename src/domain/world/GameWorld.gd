@@ -249,7 +249,7 @@ func _emit_snapshot() -> void:
 	if agent_bridge != null and agent_bridge.has_method("send_state"):
 		agent_bridge.send_state(state.to_dict())
 	var network = _find_network_adapter()
-	if network != null and network.has_method("send_state"):
+	if network != null and network.has_method("send_state") and _is_authoritative_network_server():
 		var state_dict: Dictionary = state.to_dict()
 		var should_send_full := _should_send_full_snapshot()
 		if should_send_full or not network.has_method("send_state_delta"):
@@ -355,6 +355,8 @@ func _on_network_command(command) -> void:
 func _on_event_emitted(event_data) -> void:
 	if _network == null or not is_instance_valid(_network):
 		return
+	if not _is_authoritative_network_server():
+		return
 	if not _network.has_method("send_event"):
 		return
 	var event_dict: Dictionary = {}
@@ -374,6 +376,8 @@ func _on_network_event(event_payload: Dictionary) -> void:
 		if not player_id.is_empty() and ack_tick >= 0:
 			_acked_tick_by_player[player_id] = ack_tick
 	elif msg_type == "resync_request":
+		if not _is_authoritative_network_server():
+			return
 		_force_full_snapshot_once = true
 		_emit_snapshot()
 
@@ -383,8 +387,21 @@ func _on_snapshot_ack_received(player_id: String, tick: int) -> void:
 	_acked_tick_by_player[player_id] = tick
 
 func _on_resync_requested(_player_id: String, _reason: String) -> void:
+	if not _is_authoritative_network_server():
+		return
 	_force_full_snapshot_once = true
 	_emit_snapshot()
+
+func _is_authoritative_network_server() -> bool:
+	if _network == null or not is_instance_valid(_network):
+		_network = _find_network_adapter()
+	if _network == null or not is_instance_valid(_network):
+		return false
+	if String(_network.get("role")) != "server":
+		return false
+	if _network.has_method("is_online"):
+		return bool(_network.call("is_online"))
+	return false
 
 func _should_send_full_snapshot() -> bool:
 	if not enable_state_delta:

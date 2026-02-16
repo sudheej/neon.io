@@ -86,7 +86,7 @@ var net_debug_hud: bool = false
 var local_actor_id: String = "player"
 var local_player: Node2D = null
 var _last_local_player_ref: Node2D = null
-var _bound_local_death_actor_id: String = ""
+var _bound_local_death_actor: Node = null
 var _bound_input_actor_id: String = ""
 var _network_adapter: Node = null
 var _last_network_state_tick: int = -1
@@ -159,11 +159,21 @@ func _process(delta: float) -> void:
 		return
 	if local_player == null or not is_instance_valid(local_player):
 		return
-	var focus = local_player.global_position
-	if local_player.has_method("get_active_cell_world_pos"):
-		focus = local_player.get_active_cell_world_pos()
+	var focus: Vector2 = local_player.global_position
+	if not _is_online_client() and local_player.has_method("get_active_cell_world_pos"):
+		var focus_raw = local_player.get_active_cell_world_pos()
+		if focus_raw is Vector2:
+			focus = focus_raw
 	if camera != null:
-		var t = 1.0 - exp(-camera_follow_speed * delta)
+		var follow_speed := camera_follow_speed
+		var dist: float = camera.global_position.distance_to(focus)
+		if _is_online_client():
+			follow_speed = 10.0
+			if dist > 320.0:
+				camera.global_position = focus
+			elif dist > 120.0:
+				follow_speed = 18.0
+		var t = 1.0 - exp(-follow_speed * delta)
 		camera.global_position = camera.global_position.lerp(focus, t)
 	elapsed += delta
 	var combatants: Array[Node] = _get_combatants()
@@ -252,12 +262,11 @@ func _connect_combatant_death_signals() -> void:
 func _ensure_local_player_death_hook() -> void:
 	if local_player == null or not is_instance_valid(local_player):
 		return
-	var actor_id = String(local_player.get("actor_id"))
-	if actor_id == _bound_local_death_actor_id:
+	if _bound_local_death_actor == local_player:
 		return
 	if local_player.has_signal("died") and not local_player.is_connected("died", Callable(self, "_on_player_died")):
 		local_player.connect("died", Callable(self, "_on_player_died"))
-	_bound_local_death_actor_id = actor_id
+	_bound_local_death_actor = local_player
 
 func _bind_input_sources() -> void:
 	var human = get_node_or_null("GameWorld/HumanInputSource")
@@ -286,6 +295,13 @@ func _register_actor_with_world(actor: Node) -> void:
 func _on_combatant_tree_exited(actor_id: String) -> void:
 	if actor_id.is_empty():
 		return
+	_net_target_pos_by_actor.erase(actor_id)
+	_replicated_actor_ids.erase(actor_id)
+	if _bound_local_death_actor != null:
+		if not is_instance_valid(_bound_local_death_actor):
+			_bound_local_death_actor = null
+		elif String(_bound_local_death_actor.get("actor_id")) == actor_id:
+			_bound_local_death_actor = null
 	if not is_inside_tree():
 		return
 	var tree := get_tree()
@@ -322,11 +338,22 @@ func _get_combatants() -> Array[Node]:
 	return list
 
 func _process_combatants(delta: float, combatants: Array[Node]) -> void:
+	if _is_online_client():
+		if local_player == null or not is_instance_valid(local_player):
+			return
+		if not local_player.has_node("WeaponSystem"):
+			return
+		if bool(local_player.get("is_dying")):
+			return
+		var local_system = local_player.get_node("WeaponSystem")
+		var local_targets = combatants.filter(func(item):
+			return item != local_player and item != null and is_instance_valid(item) and not bool(item.get("is_dying"))
+		)
+		local_system.process_weapons(delta, local_targets)
+		return
 	for entity in combatants:
 		var node = entity as Node
 		if node == null:
-			continue
-		if _is_online_client() and _is_replicated_actor(node):
 			continue
 		if not node.has_node("WeaponSystem"):
 			continue
@@ -1126,7 +1153,7 @@ func _apply_full_actor_state(raw_actors) -> void:
 			continue
 		var actor: Node2D = null
 		if actor_id == local_actor_id:
-			actor = _find_actor_by_id(actor_id)
+			actor = _ensure_local_network_actor(actor_data)
 		else:
 			present_remote_ids[actor_id] = true
 			actor = _ensure_replicated_actor(actor_id, actor_data)
@@ -1149,7 +1176,7 @@ func _apply_delta_actor_state(data: Dictionary) -> void:
 				continue
 			var actor: Node2D = null
 			if actor_id == local_actor_id:
-				actor = _find_actor_by_id(actor_id)
+				actor = _ensure_local_network_actor(actor_data)
 			else:
 				actor = _ensure_replicated_actor(actor_id, actor_data)
 			if actor != null:
@@ -1162,9 +1189,52 @@ func _apply_delta_actor_state(data: Dictionary) -> void:
 				continue
 			_remove_replicated_actor(actor_id)
 
+func _ensure_local_network_actor(actor_data: Dictionary) -> Node2D:
+	var existing := _find_actor_by_id(local_actor_id)
+	if existing != null and is_instance_valid(existing):
+		if existing.has_method("set_network_driven"):
+			existing.set_network_driven(true)
+		return existing
+	if player != null and is_instance_valid(player) and String(player.get("actor_id")) == "player":
+		player.set("actor_id", local_actor_id)
+		if player.has_method("set_ai_enabled"):
+			player.set_ai_enabled(false)
+		if player.has_method("set_input_enabled"):
+			player.set_input_enabled(false)
+		if player.has_method("set_network_driven"):
+			player.set_network_driven(true)
+		_register_actor_with_world(player)
+		return player
+	var actor := PlayerScene.instantiate() as Node2D
+	if actor == null:
+		return null
+	actor.name = "Local_%s" % local_actor_id
+	if actor.has_method("set_ai_enabled"):
+		actor.set_ai_enabled(false)
+	if actor.has_method("set_input_enabled"):
+		actor.set_input_enabled(false)
+	if actor.has_method("set_network_driven"):
+		actor.set_network_driven(true)
+	actor.set("actor_id", local_actor_id)
+	var pos_raw = actor_data.get("position", null)
+	if pos_raw is Vector2:
+		actor.global_position = pos_raw
+	elif pos_raw is Dictionary:
+		var pos_dict: Dictionary = pos_raw
+		actor.global_position = Vector2(float(pos_dict.get("x", 0.0)), float(pos_dict.get("y", 0.0)))
+	else:
+		actor.global_position = _network_spawn_position()
+	enemies_root.add_child(actor)
+	_register_actor_with_world(actor)
+	if actor.has_signal("died"):
+		actor.died.connect(_on_combatant_died)
+	return actor
+
 func _ensure_replicated_actor(actor_id: String, actor_data: Dictionary) -> Node2D:
 	var existing = _find_actor_by_id(actor_id)
 	if existing != null and is_instance_valid(existing):
+		if existing.has_method("set_network_driven"):
+			existing.set_network_driven(true)
 		_replicated_actor_ids[actor_id] = true
 		return existing
 	var actor := PlayerScene.instantiate() as Node2D
@@ -1177,6 +1247,8 @@ func _ensure_replicated_actor(actor_id: String, actor_data: Dictionary) -> Node2
 		actor.remove_from_group("player")
 	if actor.has_method("set_input_enabled"):
 		actor.set_input_enabled(false)
+	if actor.has_method("set_network_driven"):
+		actor.set_network_driven(true)
 	actor.set("actor_id", actor_id)
 	enemies_root.add_child(actor)
 	_register_actor_with_world(actor)
@@ -1195,10 +1267,15 @@ func _apply_actor_state(actor: Node2D, actor_data: Dictionary) -> void:
 		elif pos_raw is Dictionary:
 			var pos_dict: Dictionary = pos_raw
 			target_pos = Vector2(float(pos_dict.get("x", actor.global_position.x)), float(pos_dict.get("y", actor.global_position.y)))
-		if not actor_id.is_empty() and not _net_target_pos_by_actor.has(actor_id):
-			actor.global_position = target_pos
+		var is_ai_actor := bool(actor.get("is_ai"))
 		if not actor_id.is_empty():
-			_net_target_pos_by_actor[actor_id] = target_pos
+			if not is_ai_actor:
+				actor.global_position = target_pos
+				_net_target_pos_by_actor.erase(actor_id)
+			else:
+				if not _net_target_pos_by_actor.has(actor_id):
+					actor.global_position = target_pos
+				_net_target_pos_by_actor[actor_id] = target_pos
 	if actor_data.has("health"):
 		actor.set("health", float(actor_data.get("health", actor.get("health"))))
 	if actor_data.has("max_health"):
@@ -1295,19 +1372,27 @@ func _is_replicated_actor(node: Node) -> bool:
 func _smooth_network_actor_positions(delta: float) -> void:
 	if not _is_online_client():
 		return
-	var alpha := 1.0 - exp(-16.0 * delta)
+	var alpha_remote := 1.0 - exp(-16.0 * delta)
+	var alpha_local := 1.0 - exp(-48.0 * delta)
 	for node in get_tree().get_nodes_in_group("combatants"):
 		var actor := node as Node2D
 		if actor == null or not is_instance_valid(actor):
 			continue
+		if not bool(actor.get("is_ai")):
+			continue
 		var actor_id := String(actor.get("actor_id"))
 		if actor_id.is_empty():
+			continue
+		if actor_id == local_actor_id:
 			continue
 		if not _net_target_pos_by_actor.has(actor_id):
 			continue
 		var target: Vector2 = _net_target_pos_by_actor[actor_id]
 		var delta_pos := target - actor.global_position
-		if delta_pos.length() > 140.0:
+		var is_local := actor_id == local_actor_id
+		var snap_dist := 90.0 if is_local else 140.0
+		var alpha := alpha_local if is_local else alpha_remote
+		if delta_pos.length() > snap_dist:
 			actor.global_position = target
 			continue
 		actor.global_position = actor.global_position.lerp(target, alpha)

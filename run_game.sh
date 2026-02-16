@@ -86,6 +86,8 @@ stop_existing_test_servers() {
   pkill -f "NEON_NETWORK_ROLE=server" >/dev/null 2>&1 || true
   pkill -f "NEON_SERVER=1" >/dev/null 2>&1 || true
   pkill -f "NEON_MODE=human_only" >/dev/null 2>&1 || true
+  pkill -f -- "--skip-mode-select" >/dev/null 2>&1 || true
+  pkill -f "/tmp/neon_human_client_" >/dev/null 2>&1 || true
   if command -v fuser >/dev/null 2>&1; then
     fuser -k 7000/udp >/dev/null 2>&1 || true
     fuser -k "${LOBBY_PORT_DEFAULT}/tcp" >/dev/null 2>&1 || true
