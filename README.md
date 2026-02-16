@@ -106,6 +106,8 @@ Recent multiplayer stability fixes:
 - dedicated server no longer enters local game-over flow on actor death (prevents post-death combat freeze).
 - network-driven damage flash now decays correctly (no persistent red health bar tint).
 - weapon HUD now binds reliably to each client's local actor id (no cross-client weapon panel mirroring).
+- boost orbs now replicate to online clients in `mixed` and `human_only` (server-authoritative spawn/consume, client render/apply).
+- replicated actor state now includes per-weapon ammo, so Weapon HUD ammo drain/refill stays in sync online.
 
 ## First 5 Minutes (New Agent Session)
 Run these in order before coding:
@@ -186,6 +188,7 @@ Current command types:
   - touching while capped still invalidates the orb (denial play), with a short CRT-style collapse/fade animation
   - XP orb shows `$`, health orb shows `+`
   - orb lifetime: 20s
+  - online modes (`mixed`, `human_only`) use server-authoritative orb state replicated via snapshots/deltas
 - AI behavior includes profile/state-aware orb decisions:
   - pursues useful orb types based on health, ammo capacity need, credits, and nearby enemy pressure
   - blends orb pursuit with combat steering
@@ -193,7 +196,8 @@ Current command types:
   - near player, farther from player, or around ongoing action (other combatants / existing orbs)
 
 State snapshots are `GameState.to_dict()` dictionaries:
-- `actors`: list of `id`, `position`, `health`, `max_health`, `is_ai`, `xp`, `cells`, `selected_weapon`, `armed_cell`
+- `actors`: list of `id`, `position`, `health`, `max_health`, `is_ai`, `xp`, `cells`, `selected_weapon`, `armed_cell`, `weapon_ammo`
+- `orbs`: list of `id`, `position`, `boost_type`, `weapon_type`, `amount`
 - `time`
 
 ### Local Agent Stub (Minimal Example)

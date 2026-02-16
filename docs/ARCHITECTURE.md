@@ -42,6 +42,8 @@ Presentation World Loop:
   - weapon select + HUD sync per local actor
   - slot/range actions
   - shift+direction expansion actions
+  - boost-orb drop/render/consume replication in `mixed` and `human_only`
+  - Weapon HUD ammo drain/refill sync from replicated `weapon_ammo`
 - Respawn/replication stability fixes are in place:
   - client applies `actors_remove` before `actors_upsert` to avoid stale-node respawn races
   - local actor is recreated correctly after remove/upsert cycles
@@ -74,6 +76,10 @@ Presentation World Loop:
   - `cells`
   - `selected_weapon`
   - `armed_cell`
+  - `weapon_ammo`
+- Snapshot/delta replication now includes boost orb entities:
+  - full snapshot `orbs`
+  - delta `orbs_upsert` and `orbs_remove`
 - `World` applies local actor authoritative state, adds client-side position smoothing, and updates minimap local/enemy classification by `actor_id`.
 
 ## Actor Identity
@@ -104,7 +110,17 @@ Legacy expand commands remain for compatibility (`TOGGLE_EXPAND`, `PLACE_CELL`).
         "xp": 250.0,
         "cells": [{"x": 0, "y": 0}],
         "selected_weapon": 0,
-        "armed_cell": {"x": 0, "y": 0}
+        "armed_cell": {"x": 0, "y": 0},
+        "weapon_ammo": {"0": 40, "1": 16, "2": 8, "3": 14}
+      }
+    ],
+    "orbs": [
+      {
+        "id": "orb_1739770000000_42",
+        "position": {"x": 120.0, "y": -64.0},
+        "boost_type": 0,
+        "weapon_type": 0,
+        "amount": 8.0
       }
     ]
   }
@@ -157,6 +173,7 @@ Legacy expand commands remain for compatibility (`TOGGLE_EXPAND`, `PLACE_CELL`).
   - health and ammo respect caps (`max_health`, weapon capacity)
   - if a combatant touches an orb while capped, orb is still invalidated (denial mechanic)
   - invalidation uses a short CRT-like collapse/fade effect
+  - online client path treats orb lifecycle as server-authoritative and applies replicated orb state
 - Pickup geometry:
   - cell-aware overlap against `PlayerShape` cell footprints to avoid premature pickup
 

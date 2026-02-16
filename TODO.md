@@ -11,6 +11,9 @@
   - movement replicated both ways
   - weapon/slot/range/expand actions apply in online mode
   - local weapon HUD now follows local actor correctly per client
+  - boost orbs now drop and render in online modes (`mixed`, `human_only`)
+  - weapon HUD ammo now reflects online drain/refill correctly
+  - XP orb gains now reflect on replicated credits (`xp`) value
 - Remaining minor issue:
   - camera recenter/follow still needs final polish around local death/respawn transitions under prolonged soak.
 
@@ -39,6 +42,10 @@
   - network-driven actors now decay `damage_flash`/blink timers (no stuck red bar tint).
 - Weapon HUD local binding fix in `src/presentation/ui/WeaponHud.gd`:
   - HUD now re-resolves strictly by local actor id and avoids stale/mismatched actor nodes.
+- Orb + ammo replication fixes in online client path:
+  - authoritative orb replication added to snapshots/deltas (`orbs`, `orbs_upsert`, `orbs_remove`) via `GameWorld`.
+  - online client now applies replicated orb state in `World.gd` and treats orb spawn/consume as server-authoritative.
+  - actor replication now includes `weapon_ammo`; client applies replicated weapon ammo to `WeaponSystem` so HUD stays synced.
 - New mixed-mode launcher flow in `run_game.sh`:
   - `--test-mixed-mode` starts lobby + mixed server + test clients.
   - mixed test defaults `MIN_PLAYERS_TO_START_MIXED=2` unless overridden, ensuring same-match dual-client assignment.
@@ -115,7 +122,8 @@
   - dynamic actor register/unregister API in `GameWorld.gd`
 - Authoritative replication improvements:
   - local actor state now applies from snapshots/deltas (not only remotes)
-  - replicated fields now include gameplay-critical data (`xp`, cells, selected weapon, armed cell)
+  - replicated fields now include gameplay-critical data (`xp`, cells, selected weapon, armed cell, weapon_ammo)
+  - replicated orb entity state now includes `id`, `position`, `boost_type`, `weapon_type`, `amount`
   - client-side network position smoothing for less coarse motion
   - minimap identifies local actor by `actor_id`, showing other human players as enemies
 - Reconciliation primitives:
