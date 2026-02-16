@@ -91,6 +91,7 @@ var _bound_input_actor_id: String = ""
 var _network_adapter: Node = null
 var _last_network_state_tick: int = -1
 var _replicated_actor_ids: Dictionary = {}
+var _replicated_orb_ids: Dictionary = {}
 var _net_target_pos_by_actor: Dictionary = {}
 var _net_debug_label: Label = null
 
@@ -625,6 +626,8 @@ func _on_player_died(_victim: Node) -> void:
 	_update_game_over_time()
 
 func _on_combatant_died(victim: Node) -> void:
+	if _is_online_client():
+		return
 	_handle_kill_achievements(victim)
 	_spawn_boost_orb(victim)
 
@@ -944,6 +947,8 @@ func _load_imported_audio(source_path: String) -> AudioStream:
 	return ResourceLoader.load(remap_path) as AudioStream
 
 func _process_boost_orbs(combatants: Array[Node]) -> void:
+	if _is_online_client():
+		return
 	if boost_orbs_root == null:
 		return
 	for child in boost_orbs_root.get_children():
@@ -982,9 +987,13 @@ func _spawn_boost_orb(victim: Node) -> void:
 			WeaponSlot.WeaponType.SPREAD
 		]
 		weapon_type = weapon_pool[randi() % weapon_pool.size()]
+	orb.orb_id = _next_orb_id()
 	orb.configure(boost_type, amount, weapon_type)
 	orb.global_position = _safe_orb_spawn_position(victim_node.global_position, orb)
 	boost_orbs_root.add_child(orb)
+
+func _next_orb_id() -> String:
+	return "orb_%d_%d" % [Time.get_ticks_usec(), randi()]
 
 func _safe_orb_spawn_position(desired_pos: Vector2, orb: Node) -> Vector2:
 	var boundary = get_node_or_null("ArenaBoundary")
@@ -1151,8 +1160,10 @@ func _on_network_state_received(state: Dictionary) -> void:
 		elapsed = maxf(elapsed, float(data.get("time", elapsed)))
 	if data.has("actors"):
 		_apply_full_actor_state(data.get("actors", []))
+		_apply_full_orb_state(data.get("orbs", []))
 	else:
 		_apply_delta_actor_state(data)
+		_apply_delta_orb_state(data)
 	if tick >= 0:
 		_last_network_state_tick = tick
 
@@ -1211,6 +1222,47 @@ func _apply_delta_actor_state(data: Dictionary) -> void:
 				actor = _ensure_replicated_actor(actor_id, actor_data)
 			if actor != null:
 				_apply_actor_state(actor, actor_data)
+
+func _apply_full_orb_state(raw_orbs) -> void:
+	var present_orb_ids: Dictionary = {}
+	if not (raw_orbs is Array):
+		return
+	for raw_orb in raw_orbs:
+		if not (raw_orb is Dictionary):
+			continue
+		var orb_data: Dictionary = raw_orb
+		var orb_id := String(orb_data.get("id", ""))
+		if orb_id.is_empty():
+			continue
+		present_orb_ids[orb_id] = true
+		var orb = _ensure_replicated_orb(orb_data)
+		if orb != null:
+			_apply_orb_state(orb, orb_data)
+	for orb_id in _replicated_orb_ids.keys():
+		var id := String(orb_id)
+		if not present_orb_ids.has(id):
+			_remove_replicated_orb(id)
+
+func _apply_delta_orb_state(data: Dictionary) -> void:
+	var removes_raw = data.get("orbs_remove", [])
+	if removes_raw is Array:
+		for raw_id in removes_raw:
+			var orb_id := String(raw_id)
+			if orb_id.is_empty():
+				continue
+			_remove_replicated_orb(orb_id)
+	var upserts_raw = data.get("orbs_upsert", [])
+	if upserts_raw is Array:
+		for raw_orb in upserts_raw:
+			if not (raw_orb is Dictionary):
+				continue
+			var orb_data: Dictionary = raw_orb
+			var orb_id := String(orb_data.get("id", ""))
+			if orb_id.is_empty():
+				continue
+			var orb = _ensure_replicated_orb(orb_data)
+			if orb != null:
+				_apply_orb_state(orb, orb_data)
 
 func _ensure_local_network_actor(actor_data: Dictionary) -> Node2D:
 	var existing := _find_actor_by_id(local_actor_id)
@@ -1330,6 +1382,14 @@ func _apply_actor_state(actor: Node2D, actor_data: Dictionary) -> void:
 			armed_cell = Vector2i(int(armed_dict.get("x", 0)), int(armed_dict.get("y", 0)))
 		if weapon_system.has_method("set_armed_cell"):
 			weapon_system.call("set_armed_cell", armed_cell)
+	if weapon_system != null and actor_data.has("weapon_ammo"):
+		var ammo_raw = actor_data.get("weapon_ammo", {})
+		if ammo_raw is Dictionary:
+			var ammo_dict: Dictionary = ammo_raw
+			var replicated_ammo: Dictionary = {}
+			for key in ammo_dict.keys():
+				replicated_ammo[int(key)] = int(ammo_dict.get(key, 0))
+			weapon_system.set("weapon_ammo", replicated_ammo)
 
 func _apply_actor_cells(actor: Node2D, raw_cells) -> void:
 	var shape = actor.get_node_or_null("PlayerShape")
@@ -1380,6 +1440,58 @@ func _remove_replicated_actor(actor_id: String) -> void:
 	var actor = _find_actor_by_id(actor_id)
 	if actor != null and is_instance_valid(actor):
 		actor.queue_free()
+
+func _ensure_replicated_orb(orb_data: Dictionary) -> Node2D:
+	if boost_orbs_root == null:
+		return null
+	var orb_id := String(orb_data.get("id", ""))
+	if orb_id.is_empty():
+		return null
+	var existing := _find_orb_by_id(orb_id)
+	if existing != null and is_instance_valid(existing):
+		_replicated_orb_ids[orb_id] = true
+		return existing
+	var orb := BoostOrbScript.new()
+	orb.orb_id = orb_id
+	boost_orbs_root.add_child(orb)
+	_replicated_orb_ids[orb_id] = true
+	return orb
+
+func _apply_orb_state(orb: Node2D, orb_data: Dictionary) -> void:
+	if orb == null or not is_instance_valid(orb):
+		return
+	if orb_data.has("id"):
+		orb.set("orb_id", String(orb_data.get("id", "")))
+	var pos_raw = orb_data.get("position", null)
+	if pos_raw is Vector2:
+		orb.global_position = pos_raw
+	elif pos_raw is Dictionary:
+		var pos_dict: Dictionary = pos_raw
+		orb.global_position = Vector2(float(pos_dict.get("x", orb.global_position.x)), float(pos_dict.get("y", orb.global_position.y)))
+	var next_boost_type := int(orb_data.get("boost_type", orb.get("boost_type")))
+	var next_weapon_type := int(orb_data.get("weapon_type", orb.get("weapon_type")))
+	var next_amount := float(orb_data.get("amount", orb.get("amount")))
+	if orb.has_method("configure"):
+		orb.call("configure", next_boost_type, next_amount, next_weapon_type)
+
+func _remove_replicated_orb(orb_id: String) -> void:
+	if orb_id.is_empty():
+		return
+	_replicated_orb_ids.erase(orb_id)
+	var orb := _find_orb_by_id(orb_id)
+	if orb != null and is_instance_valid(orb):
+		orb.queue_free()
+
+func _find_orb_by_id(orb_id: String) -> Node2D:
+	if orb_id.is_empty() or boost_orbs_root == null:
+		return null
+	for child in boost_orbs_root.get_children():
+		var orb = child as Node2D
+		if orb == null or not is_instance_valid(orb):
+			continue
+		if String(orb.get("orb_id")) == orb_id:
+			return orb
+	return null
 
 func _remove_local_network_actor() -> void:
 	_net_target_pos_by_actor.erase(local_actor_id)

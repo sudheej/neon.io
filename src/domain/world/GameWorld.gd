@@ -309,7 +309,27 @@ func _build_snapshot() -> Dictionary:
 				actor_data["selected_weapon"] = int(weapon_system.call("get_selected_weapon_type"))
 			if weapon_system.has_method("get_armed_cell"):
 				actor_data["armed_cell"] = weapon_system.call("get_armed_cell")
+			var ammo_raw = weapon_system.get("weapon_ammo")
+			if ammo_raw is Dictionary:
+				actor_data["weapon_ammo"] = (ammo_raw as Dictionary).duplicate(true)
 		data["actors"].append(actor_data)
+	data["orbs"] = []
+	var orbs = get_tree().get_nodes_in_group("boost_orbs")
+	for entry in orbs:
+		var orb = entry as Node2D
+		if orb == null or not is_instance_valid(orb):
+			continue
+		var orb_id := String(orb.get("orb_id"))
+		if orb_id.is_empty():
+			continue
+		var pos = orb.global_position
+		data["orbs"].append({
+			"id": orb_id,
+			"position": {"x": pos.x, "y": pos.y},
+			"boost_type": int(orb.get("boost_type")),
+			"weapon_type": int(orb.get("weapon_type")),
+			"amount": float(orb.get("amount"))
+		})
 	return data
 
 func _request_restart() -> void:
@@ -441,7 +461,7 @@ func _build_state_delta(
 			continue
 		var prev_actor: Dictionary = previous_actors.get(actor_id, {})
 		var actor_delta: Dictionary = {"id": actor_id}
-		for field_name in ["position", "health", "max_health", "is_ai", "xp", "cells", "selected_weapon", "armed_cell"]:
+		for field_name in ["position", "health", "max_health", "is_ai", "xp", "cells", "selected_weapon", "armed_cell", "weapon_ammo"]:
 			if not _values_equal(curr_actor.get(field_name), prev_actor.get(field_name)):
 				actor_delta[field_name] = curr_actor.get(field_name)
 		if actor_delta.size() > 1:
@@ -459,6 +479,39 @@ func _build_state_delta(
 		delta_data["actors_upsert"] = upserts
 	if not removes.is_empty():
 		delta_data["actors_remove"] = removes
+	var previous_orbs: Dictionary = _entities_by_id(previous_snapshot.get("orbs", []))
+	var current_orbs: Dictionary = _entities_by_id(current_snapshot.get("orbs", []))
+	var current_orb_ids: Array[String] = []
+	for orb_id in current_orbs.keys():
+		current_orb_ids.append(String(orb_id))
+	current_orb_ids.sort()
+	var previous_orb_ids: Array[String] = []
+	for orb_id in previous_orbs.keys():
+		previous_orb_ids.append(String(orb_id))
+	previous_orb_ids.sort()
+
+	var orb_upserts: Array[Dictionary] = []
+	for orb_id in current_orb_ids:
+		var curr_orb: Dictionary = current_orbs.get(orb_id, {})
+		if not previous_orbs.has(orb_id):
+			orb_upserts.append(curr_orb.duplicate(true))
+			continue
+		var prev_orb: Dictionary = previous_orbs.get(orb_id, {})
+		var orb_delta: Dictionary = {"id": orb_id}
+		for field_name in ["position", "boost_type", "weapon_type", "amount"]:
+			if not _values_equal(curr_orb.get(field_name), prev_orb.get(field_name)):
+				orb_delta[field_name] = curr_orb.get(field_name)
+		if orb_delta.size() > 1:
+			orb_upserts.append(orb_delta)
+
+	var orb_removes: Array[String] = []
+	for orb_id in previous_orb_ids:
+		if not current_orbs.has(orb_id):
+			orb_removes.append(orb_id)
+	if not orb_upserts.is_empty():
+		delta_data["orbs_upsert"] = orb_upserts
+	if not orb_removes.is_empty():
+		delta_data["orbs_remove"] = orb_removes
 
 	return {
 		"tick": current_tick,
@@ -467,16 +520,19 @@ func _build_state_delta(
 	}
 
 func _actors_by_id(raw_actors) -> Dictionary:
+	return _entities_by_id(raw_actors)
+
+func _entities_by_id(raw_entities) -> Dictionary:
 	var out: Dictionary = {}
-	if raw_actors is Array:
-		for entry in raw_actors:
+	if raw_entities is Array:
+		for entry in raw_entities:
 			if not (entry is Dictionary):
 				continue
-			var actor_data: Dictionary = entry
-			var actor_id := String(actor_data.get("id", ""))
-			if actor_id.is_empty():
+			var data: Dictionary = entry
+			var entity_id := String(data.get("id", ""))
+			if entity_id.is_empty():
 				continue
-			out[actor_id] = actor_data
+			out[entity_id] = data
 	return out
 
 func _values_equal(a, b) -> bool:

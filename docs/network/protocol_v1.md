@@ -44,6 +44,15 @@ If `protocol_version` does not match exactly, receivers reject the message with 
 - Commands use domain shape:
   - `{"type": <GameCommand.Type int>, "actor_id": "...", "payload": {...}}`
 
+## Replication Payload Shape (Current)
+- `state_snapshot.payload.state.data` includes:
+  - `time`
+  - `actors`: each actor may contain `id`, `position`, `health`, `max_health`, `is_ai`, `xp`, `cells`, `selected_weapon`, `armed_cell`, `weapon_ammo`
+  - `orbs`: each orb contains `id`, `position`, `boost_type`, `weapon_type`, `amount`
+- `state_delta.payload.state.data` may include:
+  - `actors_upsert`, `actors_remove`
+  - `orbs_upsert`, `orbs_remove`
+
 ## Compatibility
 - Client and backend must share the same `protocol_version`.
 - Do not deploy partial schema changes without bumping protocol version.

@@ -86,6 +86,8 @@ Gameplay systems:
     - both player and AI can consume; if full/capped, touching still invalidates orb (CRT-style collapse/fade)
     - health orb renders `+`, XP orb renders `$`
     - lifetime: 20s
+    - online modes (`mixed`, `human_only`) now replicate orb state from server snapshots/deltas (`orbs`, `orbs_upsert`, `orbs_remove`)
+    - orb spawn/consume is server-authoritative in online client flow
 
 Rendering:
 - 2D MSAA enabled in `project.godot` (`anti_aliasing/quality/msaa_2d=3`)
@@ -97,6 +99,7 @@ Notes:
 - Minimap local/enemy rendering in multiplayer is actor-id based:
   - local actor (`SessionConfig.local_actor_id`) renders as player marker
   - all other combatants (including other humans) render as enemy markers
+- Multiplayer actor snapshots now include `weapon_ammo`; online Weapon HUD ammo drain/refill reflects authoritative state.
 - This Godot binary reports AudioStream extensions: `tres`, `res`, `sample`, `oggvorbisstr`, `mp3str`; raw `.wav`/`.ogg` do not load without import.
 - Arrow keys use Godot 4 keycodes in `project.godot` (UP 4194320, DOWN 4194322, LEFT 4194319, RIGHT 4194321).
 - Debug: run `./run_game.sh --collision-debug` to draw collision overlay and print collision distances.

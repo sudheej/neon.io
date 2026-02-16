@@ -19,6 +19,7 @@ var boost_type: int = BoostType.XP
 var weapon_type: int = WeaponSlot.WeaponType.LASER
 var amount: float = 0.0
 var initial_amount: float = 0.0
+var orb_id: String = ""
 
 var _life_timer: float = 0.0
 var _pulse_phase: float = 0.0
