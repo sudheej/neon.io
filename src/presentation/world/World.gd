@@ -334,22 +334,34 @@ func _toggle_minimap_visibility() -> void:
 
 func _get_combatants() -> Array[Node]:
 	var list: Array[Node] = get_tree().get_nodes_in_group("combatants")
-	list.sort_custom(func(a, b): return a.get_instance_id() < b.get_instance_id())
+	list.sort_custom(func(a, b):
+		var a_id := ""
+		var b_id := ""
+		if a != null and is_instance_valid(a):
+			a_id = String(a.get("actor_id"))
+		if b != null and is_instance_valid(b):
+			b_id = String(b.get("actor_id"))
+		if a_id != b_id:
+			return a_id < b_id
+		return a.get_instance_id() < b.get_instance_id()
+	)
 	return list
 
 func _process_combatants(delta: float, combatants: Array[Node]) -> void:
 	if _is_online_client():
-		if local_player == null or not is_instance_valid(local_player):
-			return
-		if not local_player.has_node("WeaponSystem"):
-			return
-		if bool(local_player.get("is_dying")):
-			return
-		var local_system = local_player.get_node("WeaponSystem")
-		var local_targets = combatants.filter(func(item):
-			return item != local_player and item != null and is_instance_valid(item) and not bool(item.get("is_dying"))
-		)
-		local_system.process_weapons(delta, local_targets)
+		for entity in combatants:
+			var node = entity as Node
+			if node == null or not is_instance_valid(node):
+				continue
+			if bool(node.get("is_dying")):
+				continue
+			if not node.has_node("WeaponSystem"):
+				continue
+			var system = node.get_node("WeaponSystem")
+			var targets = combatants.filter(func(item):
+				return item != node and item != null and is_instance_valid(item) and not bool(item.get("is_dying"))
+			)
+			system.process_weapons(delta, targets)
 		return
 	for entity in combatants:
 		var node = entity as Node
@@ -1267,17 +1279,16 @@ func _apply_actor_state(actor: Node2D, actor_data: Dictionary) -> void:
 		elif pos_raw is Dictionary:
 			var pos_dict: Dictionary = pos_raw
 			target_pos = Vector2(float(pos_dict.get("x", actor.global_position.x)), float(pos_dict.get("y", actor.global_position.y)))
-		var is_ai_actor := bool(actor.get("is_ai"))
 		if not actor_id.is_empty():
-			if not is_ai_actor:
+			if not _net_target_pos_by_actor.has(actor_id):
 				actor.global_position = target_pos
-				_net_target_pos_by_actor.erase(actor_id)
-			else:
-				if not _net_target_pos_by_actor.has(actor_id):
-					actor.global_position = target_pos
-				_net_target_pos_by_actor[actor_id] = target_pos
+			_net_target_pos_by_actor[actor_id] = target_pos
 	if actor_data.has("health"):
-		actor.set("health", float(actor_data.get("health", actor.get("health"))))
+		var prev_health := float(actor.get("health"))
+		var next_health := float(actor_data.get("health", prev_health))
+		actor.set("health", next_health)
+		if next_health < prev_health:
+			actor.set("damage_flash", maxf(float(actor.get("damage_flash")), 0.08))
 	if actor_data.has("max_health"):
 		actor.set("max_health", float(actor_data.get("max_health", actor.get("max_health"))))
 	if actor_data.has("is_ai"):
@@ -1372,26 +1383,36 @@ func _is_replicated_actor(node: Node) -> bool:
 func _smooth_network_actor_positions(delta: float) -> void:
 	if not _is_online_client():
 		return
-	var alpha_remote := 1.0 - exp(-16.0 * delta)
-	var alpha_local := 1.0 - exp(-48.0 * delta)
+	var alpha_ai := 1.0 - exp(-16.0 * delta)
+	var alpha_human := 1.0 - exp(-22.0 * delta)
+	var alpha_local := 1.0 - exp(-26.0 * delta)
 	for node in get_tree().get_nodes_in_group("combatants"):
 		var actor := node as Node2D
 		if actor == null or not is_instance_valid(actor):
 			continue
-		if not bool(actor.get("is_ai")):
-			continue
 		var actor_id := String(actor.get("actor_id"))
 		if actor_id.is_empty():
-			continue
-		if actor_id == local_actor_id:
 			continue
 		if not _net_target_pos_by_actor.has(actor_id):
 			continue
 		var target: Vector2 = _net_target_pos_by_actor[actor_id]
 		var delta_pos := target - actor.global_position
 		var is_local := actor_id == local_actor_id
-		var snap_dist := 90.0 if is_local else 140.0
-		var alpha := alpha_local if is_local else alpha_remote
+		if is_local:
+			var local_dist := delta_pos.length()
+			if local_dist <= 1.25:
+				continue
+			if local_dist > 85.0:
+				actor.global_position = target
+			else:
+				actor.global_position = actor.global_position.lerp(target, alpha_local)
+			continue
+		var is_ai_actor := bool(actor.get("is_ai"))
+		var snap_dist := 170.0
+		var alpha := alpha_human
+		if is_ai_actor:
+			alpha = alpha_ai
+			snap_dist = 140.0
 		if delta_pos.length() > snap_dist:
 			actor.global_position = target
 			continue
