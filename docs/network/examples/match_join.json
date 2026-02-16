@@ -1,0 +1,12 @@
+{
+  "msg_type": "match_join",
+  "protocol_version": "net.v1",
+  "session_id": "sess_001",
+  "player_id": "player_42",
+  "timestamp_ms": 1730000000600,
+  "seq": 7,
+  "payload": {
+    "match_id": "match_7781",
+    "match_token": "join_token_xyz"
+  }
+}

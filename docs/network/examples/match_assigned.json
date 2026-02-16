@@ -1,0 +1,14 @@
+{
+  "msg_type": "match_assigned",
+  "protocol_version": "net.v1",
+  "session_id": "sess_001",
+  "player_id": "player_42",
+  "timestamp_ms": 1730000000500,
+  "seq": 6,
+  "payload": {
+    "match_id": "match_7781",
+    "endpoint": "198.51.100.25:9000",
+    "match_token": "join_token_xyz",
+    "mode": "mixed"
+  }
+}

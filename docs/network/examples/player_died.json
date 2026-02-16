@@ -1,0 +1,13 @@
+{
+  "msg_type": "player_died",
+  "protocol_version": "net.v1",
+  "session_id": "sess_001",
+  "player_id": "server",
+  "timestamp_ms": 1730000001100,
+  "seq": 211,
+  "payload": {
+    "victim_player_id": "player_42",
+    "killer_actor_id": "ai_8173",
+    "match_id": "match_7781"
+  }
+}

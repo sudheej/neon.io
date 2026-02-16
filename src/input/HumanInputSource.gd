@@ -3,11 +3,16 @@ class_name HumanInputSource
 
 const GameCommand = preload("res://src/domain/commands/Command.gd")
 const WeaponSlot = preload("res://src/domain/weapons/WeaponSlot.gd")
+const MOVE_SEND_INTERVAL: float = 0.05
+const IDLE_SEND_INTERVAL: float = 0.15
+const MOVE_CHANGE_EPS: float = 0.0001
 
 @export var actor_path: NodePath
 
 var _actor: Node = null
 var _expand_hold: bool = false
+var _move_send_timer: float = 0.0
+var _last_sent_move: Vector2 = Vector2(9999.0, 9999.0)
 
 func _ready() -> void:
 	super._ready()
@@ -26,8 +31,14 @@ func _physics_process(_delta: float) -> void:
 	var move = _get_move_vector()
 	if _expand_hold:
 		move = Vector2.ZERO
-	if move.length() > 0.0 or _actor != null:
+	var moving := move.length_squared() > MOVE_CHANGE_EPS
+	var interval := MOVE_SEND_INTERVAL if moving else IDLE_SEND_INTERVAL
+	_move_send_timer -= _delta
+	var changed := move.distance_squared_to(_last_sent_move) > MOVE_CHANGE_EPS
+	if changed or _move_send_timer <= 0.0:
 		emit_command(GameCommand.move(actor_id, move))
+		_last_sent_move = move
+		_move_send_timer = interval
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("select_next_slot"):

@@ -1,0 +1,25 @@
+{
+  "msg_type": "state_snapshot",
+  "protocol_version": "net.v1",
+  "session_id": "sess_001",
+  "player_id": "server",
+  "timestamp_ms": 1730000000900,
+  "seq": 200,
+  "payload": {
+    "state": {
+      "tick": 200,
+      "data": {
+        "time": 41.2,
+        "actors": [
+          {
+            "id": "player_42",
+            "position": {"x": 410.4, "y": 172.0},
+            "health": 37,
+            "max_health": 40,
+            "is_ai": false
+          }
+        ]
+      }
+    }
+  }
+}

@@ -4,6 +4,8 @@ const WIDTH: float = 26.0
 const HEIGHT: float = 4.0
 const OFFSET_Y: float = -24.0
 const LERP_SPEED: float = 6.0
+const DROP_LERP_MULT: float = 2.4
+const RISE_LERP_MULT: float = 0.9
 
 var display_ratio: float = 1.0
 
@@ -14,10 +16,14 @@ func _process(_delta: float) -> void:
 		var health = parent.get("health")
 		if max_health != null and health != null and float(max_health) > 0.0:
 			var target_ratio = clamp(float(health) / float(max_health), 0.0, 1.0)
-			var lerp_speed = LERP_SPEED
+			var lerp_speed := LERP_SPEED
 			var is_ai = parent.get("is_ai")
 			if is_ai != null and not bool(is_ai):
-				lerp_speed *= 0.45
+				lerp_speed *= 0.9
+			if target_ratio < display_ratio:
+				lerp_speed *= DROP_LERP_MULT
+			else:
+				lerp_speed *= RISE_LERP_MULT
 			display_ratio = lerpf(display_ratio, target_ratio, 1.0 - pow(0.001, _delta * lerp_speed))
 	queue_redraw()
 

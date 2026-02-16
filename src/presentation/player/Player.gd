@@ -50,6 +50,7 @@ var range_phase: float = 0.0
 var active_pulse_phase: float = 0.0
 var is_ai: bool = false
 var input_enabled: bool = true
+var network_driven: bool = false
 var actor_id: String = ""
 var ai_move: Vector2 = Vector2.ZERO
 var max_health: float = 40.0
@@ -104,6 +105,21 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if is_dying:
 		_update_death_fx(delta)
+		queue_redraw()
+		return
+	if network_driven:
+		# Keep visual hit feedback transient even for replicated actors.
+		if damage_flash > 0.0:
+			damage_flash = maxf(damage_flash - delta, 0.0)
+		if damage_blink_timer > 0.0:
+			damage_blink_timer = maxf(damage_blink_timer - delta, 0.0)
+			damage_blink_phase = fmod(damage_blink_phase + delta * 22.0, TAU)
+		if spawn_timer > 0.0:
+			spawn_timer = maxf(spawn_timer - delta, 0.0)
+			var spawn_t := _get_spawn_t()
+			modulate.a = spawn_t
+		else:
+			modulate.a = 1.0
 		queue_redraw()
 		return
 	survival_time += delta
@@ -168,6 +184,8 @@ func _process(delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	if is_dying:
+		return
+	if network_driven:
 		return
 	if is_ai:
 		move_command = ai_move
@@ -277,6 +295,12 @@ func set_ai_enabled(enabled: bool) -> void:
 func set_input_enabled(enabled: bool) -> void:
 	input_enabled = enabled
 
+func set_network_driven(enabled: bool) -> void:
+	network_driven = enabled
+	if network_driven:
+		input_enabled = false
+		velocity = Vector2.ZERO
+
 func set_move_command(dir: Vector2) -> void:
 	if is_ai:
 		ai_move = dir
@@ -344,6 +368,8 @@ func set_ai_move_command(dir: Vector2) -> void:
 	ai_move = dir
 
 func apply_damage(amount: float, stun_duration: float, source: Node = null, weapon_type: int = -1) -> void:
+	if network_driven:
+		return
 	last_damage_source = source
 	if not is_ai:
 		amount *= HUMAN_DAMAGE_MULTIPLIER

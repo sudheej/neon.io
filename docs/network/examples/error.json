@@ -1,0 +1,12 @@
+{
+  "msg_type": "error",
+  "protocol_version": "net.v1",
+  "session_id": "sess_001",
+  "player_id": "server",
+  "timestamp_ms": 1730000001600,
+  "seq": 216,
+  "payload": {
+    "code": "protocol_mismatch",
+    "message": "Client protocol_version does not match net.v1"
+  }
+}

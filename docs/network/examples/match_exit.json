@@ -1,0 +1,12 @@
+{
+  "msg_type": "match_exit",
+  "protocol_version": "net.v1",
+  "session_id": "sess_001",
+  "player_id": "server",
+  "timestamp_ms": 1730000001200,
+  "seq": 212,
+  "payload": {
+    "match_id": "match_7781",
+    "reason": "died"
+  }
+}
