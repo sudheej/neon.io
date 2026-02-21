@@ -541,6 +541,7 @@ func _play_event_sfx(stream: AudioStream, volume_db: float) -> void:
 		world.add_child(player)
 	else:
 		get_tree().current_scene.add_child(player)
+	player.add_to_group("transient_sfx")
 	player.play()
 	player.finished.connect(player.queue_free)
 

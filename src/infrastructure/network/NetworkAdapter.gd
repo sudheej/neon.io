@@ -269,16 +269,38 @@ func _start_enet_transport() -> void:
 		set_connected(false)
 
 func _wire_multiplayer_signals() -> void:
-	if not multiplayer.peer_connected.is_connected(_on_peer_connected):
-		multiplayer.peer_connected.connect(_on_peer_connected)
-	if not multiplayer.peer_disconnected.is_connected(_on_peer_disconnected):
-		multiplayer.peer_disconnected.connect(_on_peer_disconnected)
-	if not multiplayer.connected_to_server.is_connected(_on_connected_to_server):
-		multiplayer.connected_to_server.connect(_on_connected_to_server)
-	if not multiplayer.connection_failed.is_connected(_on_connection_failed):
-		multiplayer.connection_failed.connect(_on_connection_failed)
-	if not multiplayer.server_disconnected.is_connected(_on_server_disconnected):
-		multiplayer.server_disconnected.connect(_on_server_disconnected)
+	var on_peer_connected := Callable(self, "_on_peer_connected")
+	var on_peer_disconnected := Callable(self, "_on_peer_disconnected")
+	var on_connected_to_server := Callable(self, "_on_connected_to_server")
+	var on_connection_failed := Callable(self, "_on_connection_failed")
+	var on_server_disconnected := Callable(self, "_on_server_disconnected")
+	if not multiplayer.peer_connected.is_connected(on_peer_connected):
+		multiplayer.peer_connected.connect(on_peer_connected)
+	if not multiplayer.peer_disconnected.is_connected(on_peer_disconnected):
+		multiplayer.peer_disconnected.connect(on_peer_disconnected)
+	if not multiplayer.connected_to_server.is_connected(on_connected_to_server):
+		multiplayer.connected_to_server.connect(on_connected_to_server)
+	if not multiplayer.connection_failed.is_connected(on_connection_failed):
+		multiplayer.connection_failed.connect(on_connection_failed)
+	if not multiplayer.server_disconnected.is_connected(on_server_disconnected):
+		multiplayer.server_disconnected.connect(on_server_disconnected)
+
+func _unwire_multiplayer_signals() -> void:
+	var on_peer_connected := Callable(self, "_on_peer_connected")
+	var on_peer_disconnected := Callable(self, "_on_peer_disconnected")
+	var on_connected_to_server := Callable(self, "_on_connected_to_server")
+	var on_connection_failed := Callable(self, "_on_connection_failed")
+	var on_server_disconnected := Callable(self, "_on_server_disconnected")
+	if multiplayer.peer_connected.is_connected(on_peer_connected):
+		multiplayer.peer_connected.disconnect(on_peer_connected)
+	if multiplayer.peer_disconnected.is_connected(on_peer_disconnected):
+		multiplayer.peer_disconnected.disconnect(on_peer_disconnected)
+	if multiplayer.connected_to_server.is_connected(on_connected_to_server):
+		multiplayer.connected_to_server.disconnect(on_connected_to_server)
+	if multiplayer.connection_failed.is_connected(on_connection_failed):
+		multiplayer.connection_failed.disconnect(on_connection_failed)
+	if multiplayer.server_disconnected.is_connected(on_server_disconnected):
+		multiplayer.server_disconnected.disconnect(on_server_disconnected)
 
 func _send_over_enet(message: Dictionary) -> void:
 	if _peer == null:
@@ -345,6 +367,7 @@ func _close_enet_peer() -> void:
 	_owns_peer = false
 
 func _exit_tree() -> void:
+	_unwire_multiplayer_signals()
 	_close_enet_peer()
 
 func _apply_cmdline_overrides() -> void:

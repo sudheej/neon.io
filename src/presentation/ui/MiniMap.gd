@@ -30,9 +30,18 @@ var _fx_strength: float = 0.0
 var _screen_power: float = 1.0
 var _scanline_flash: float = 0.0
 var _transition_tween: Tween = null
+var _panel_style: StyleBoxFlat = StyleBoxFlat.new()
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_panel_style.border_width_left = 1
+	_panel_style.border_width_top = 1
+	_panel_style.border_width_right = 1
+	_panel_style.border_width_bottom = 1
+	_panel_style.corner_radius_top_left = PANEL_RADIUS
+	_panel_style.corner_radius_top_right = PANEL_RADIUS
+	_panel_style.corner_radius_bottom_left = PANEL_RADIUS
+	_panel_style.corner_radius_bottom_right = PANEL_RADIUS
 	_is_shown = visible
 	_screen_power = 1.0 if _is_shown else 0.0
 	modulate = Color(1.0, 1.0, 1.0, 1.0)
@@ -169,21 +178,10 @@ func _draw() -> void:
 			draw_rect(enemy_rect, ENEMY_COLOR, true)
 
 func _draw_panel(rect: Rect2) -> void:
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = PANEL_BG
-	panel_style.border_color = PANEL_BORDER
-	panel_style.border_width_left = 1
-	panel_style.border_width_top = 1
-	panel_style.border_width_right = 1
-	panel_style.border_width_bottom = 1
-	panel_style.corner_radius_top_left = PANEL_RADIUS
-	panel_style.corner_radius_top_right = PANEL_RADIUS
-	panel_style.corner_radius_bottom_left = PANEL_RADIUS
-	panel_style.corner_radius_bottom_right = PANEL_RADIUS
 	var alpha_scale = clampf(0.2 + _screen_power * 0.8, 0.0, 1.0)
-	panel_style.bg_color = Color(PANEL_BG.r, PANEL_BG.g, PANEL_BG.b, PANEL_BG.a * alpha_scale)
-	panel_style.border_color = Color(PANEL_BORDER.r, PANEL_BORDER.g, PANEL_BORDER.b, PANEL_BORDER.a * alpha_scale)
-	draw_style_box(panel_style, rect)
+	_panel_style.bg_color = Color(PANEL_BG.r, PANEL_BG.g, PANEL_BG.b, PANEL_BG.a * alpha_scale)
+	_panel_style.border_color = Color(PANEL_BORDER.r, PANEL_BORDER.g, PANEL_BORDER.b, PANEL_BORDER.a * alpha_scale)
+	draw_style_box(_panel_style, rect)
 	draw_rect(rect.grow(-3.0), Color(PANEL_GLOW.r, PANEL_GLOW.g, PANEL_GLOW.b, PANEL_GLOW.a * alpha_scale), false, 1.0)
 	if _fx_strength > 0.001:
 		var pulse = 0.5 + 0.5 * sin(_border_pulse_t * 8.0)

@@ -1,0 +1,10 @@
+[build]
+  publish = "playtest-site"
+
+[[edge_functions]]
+  function = "portal-config"
+  path = "/portal-config.json"
+
+[[edge_functions]]
+  function = "basic-auth"
+  path = "/*"
