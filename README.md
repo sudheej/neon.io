@@ -92,6 +92,18 @@ Useful startup overrides:
   - mixed-mode test defaults `MIN_PLAYERS_TO_START_MIXED=2` (unless already set), so both clients are assigned into the same match
   - enables net debug HUD on clients (`match`, `actor`, `remote count`)
 
+Playtest client export (Linux + Windows):
+```bash
+./scripts/export_playtest_clients.sh
+```
+- output defaults to `build/playtest/`
+- launcher scripts are generated:
+- Linux: `build/playtest/linux/start_client.sh`
+- Windows: `build/playtest/windows/start_client.bat`
+- set server target with:
+- `NEON_LOBBY_URL=http://<host>:<port>`
+- or `NEON_LOBBY_HOST=<host>` + `NEON_LOBBY_PORT=<port>` (with optional `NEON_LOBBY_SCHEME`, default `http`)
+
 Current `--test-human-mode` status:
 - connected clients now show `conn=1`, `remotes=1` with synchronized movement/actions.
 - minor known issue: camera follow/recenter around local death/respawn still needs polish.
