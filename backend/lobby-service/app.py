@@ -20,7 +20,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Deque, Dict, List
+from typing import Deque, Dict, List, Tuple
 
 HOST = os.environ.get("LOBBY_HOST", "127.0.0.1")
 PORT = int(os.environ.get("LOBBY_PORT", "8080"))
@@ -33,6 +33,16 @@ MIN_PLAYERS_TO_START_HUMAN_ONLY = int(
 MATCH_ENDPOINT = os.environ.get("MATCH_ENDPOINT", "127.0.0.1:7000")
 ASSIGNMENT_TTL_MS = int(os.environ.get("ASSIGNMENT_TTL_MS", "20000"))
 QUEUE_JOIN_COOLDOWN_MS = int(os.environ.get("QUEUE_JOIN_COOLDOWN_MS", "1200"))
+PLAYTEST_KEY = os.environ.get("PLAYTEST_KEY", "")
+TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "0") == "1"
+RATE_LIMIT_WINDOW_SEC = float(os.environ.get("RATE_LIMIT_WINDOW_SEC", "10"))
+RATE_LIMIT_HELLO = int(os.environ.get("RATE_LIMIT_HELLO", "60"))
+RATE_LIMIT_AUTH = int(os.environ.get("RATE_LIMIT_AUTH", "30"))
+RATE_LIMIT_QUEUE_JOIN = int(os.environ.get("RATE_LIMIT_QUEUE_JOIN", "20"))
+RATE_LIMIT_QUEUE_STATUS = int(os.environ.get("RATE_LIMIT_QUEUE_STATUS", "60"))
+RATE_LIMIT_QUEUE_LEAVE = int(os.environ.get("RATE_LIMIT_QUEUE_LEAVE", "20"))
+RATE_LIMIT_MAX_TRACKED_KEYS = int(os.environ.get("RATE_LIMIT_MAX_TRACKED_KEYS", "5000"))
+RATE_LIMIT_PRUNE_INTERVAL_MS = int(os.environ.get("RATE_LIMIT_PRUNE_INTERVAL_MS", "30000"))
 
 
 @dataclass
@@ -61,6 +71,8 @@ QUEUES: Dict[str, QueueState] = {
 }
 SESSIONS: Dict[str, str] = {}
 LOCK = threading.Lock()
+RATE_LIMIT_STATE: Dict[Tuple[str, str], Tuple[int, int]] = {}
+RATE_LIMIT_LAST_PRUNE_MS = 0
 
 
 def _timestamp_ms() -> int:
@@ -74,6 +86,73 @@ def _json(handler: BaseHTTPRequestHandler, code: int, payload: dict) -> None:
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def _client_ip(handler: BaseHTTPRequestHandler) -> str:
+    if TRUST_PROXY_HEADERS:
+        forwarded = handler.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            parts = [part.strip() for part in forwarded.split(",") if part.strip()]
+            if parts:
+                return parts[0]
+    host, _ = handler.client_address
+    return host
+
+
+def _is_playtest_key_valid(handler: BaseHTTPRequestHandler) -> bool:
+    if not PLAYTEST_KEY:
+        return True
+    provided_key = handler.headers.get("X-Playtest-Key", "")
+    return provided_key == PLAYTEST_KEY
+
+
+def _rate_limit_max_for_path(path: str) -> int:
+    if path.startswith("/v1/queue/status"):
+        return max(RATE_LIMIT_QUEUE_STATUS, 1)
+    if path == "/v1/hello":
+        return max(RATE_LIMIT_HELLO, 1)
+    if path == "/v1/auth":
+        return max(RATE_LIMIT_AUTH, 1)
+    if path == "/v1/queue/join":
+        return max(RATE_LIMIT_QUEUE_JOIN, 1)
+    if path == "/v1/queue/leave":
+        return max(RATE_LIMIT_QUEUE_LEAVE, 1)
+    return 0
+
+
+def _check_rate_limit(ip: str, path: str) -> int:
+    global RATE_LIMIT_LAST_PRUNE_MS
+    max_requests = _rate_limit_max_for_path(path)
+    if max_requests <= 0:
+        return 0
+    window_sec = max(RATE_LIMIT_WINDOW_SEC, 1.0)
+    now_ms = _timestamp_ms()
+    window_ms = int(window_sec * 1000.0)
+    if now_ms - RATE_LIMIT_LAST_PRUNE_MS >= max(RATE_LIMIT_PRUNE_INTERVAL_MS, 1000):
+        RATE_LIMIT_LAST_PRUNE_MS = now_ms
+        stale_keys: List[Tuple[str, str]] = []
+        for state_key, state_val in RATE_LIMIT_STATE.items():
+            state_window_start_ms = int(state_val[0])
+            if now_ms - state_window_start_ms >= window_ms:
+                stale_keys.append(state_key)
+        for stale_key in stale_keys:
+            RATE_LIMIT_STATE.pop(stale_key, None)
+        max_keys = max(RATE_LIMIT_MAX_TRACKED_KEYS, 1)
+        if len(RATE_LIMIT_STATE) > max_keys:
+            oldest_entries = sorted(RATE_LIMIT_STATE.items(), key=lambda item: int(item[1][0]))
+            overflow = len(RATE_LIMIT_STATE) - max_keys
+            for idx in range(overflow):
+                RATE_LIMIT_STATE.pop(oldest_entries[idx][0], None)
+    key = (ip, path.split("?", 1)[0])
+    window_start_ms, count = RATE_LIMIT_STATE.get(key, (now_ms, 0))
+    if now_ms - window_start_ms >= window_ms:
+        window_start_ms = now_ms
+        count = 0
+    if count >= max_requests:
+        retry_ms = max(0, window_ms - (now_ms - window_start_ms))
+        return retry_ms if retry_ms > 0 else 1
+    RATE_LIMIT_STATE[key] = (window_start_ms, count + 1)
+    return 0
 
 
 def _read_json(handler: BaseHTTPRequestHandler) -> dict:
@@ -108,13 +187,14 @@ def _allocate_match(mode: str) -> dict | None:
     now_ms = _timestamp_ms()
     expires_ms = now_ms + max(ASSIGNMENT_TTL_MS, 1000)
     for idx, session_id in enumerate(players):
+        session_suffix = session_id[-8:] if len(session_id) > 8 else session_id
         state.pending_assignments[session_id] = PendingAssignment(
             session_id=session_id,
             mode=mode,
             match_id=match_id,
             endpoint=MATCH_ENDPOINT,
             match_token=f"token_{session_id}",
-            actor_id=f"player_{idx + 1}",
+            actor_id=f"{mode}_{session_suffix}_{idx + 1}",
             created_ms=now_ms,
             expires_ms=expires_ms,
         )
@@ -189,6 +269,18 @@ class LobbyHandler(BaseHTTPRequestHandler):
         if self.path == "/healthz":
             _json(self, HTTPStatus.OK, {"ok": True, "time_ms": _timestamp_ms()})
             return
+        if not _is_playtest_key_valid(self):
+            _json(self, HTTPStatus.UNAUTHORIZED, {"error": "invalid_playtest_key"})
+            return
+        with LOCK:
+            retry_ms = _check_rate_limit(_client_ip(self), self.path)
+        if retry_ms > 0:
+            _json(
+                self,
+                HTTPStatus.TOO_MANY_REQUESTS,
+                {"error": "rate_limited", "retry_in_ms": retry_ms, "timestamp_ms": _timestamp_ms()},
+            )
+            return
 
         if self.path.startswith("/v1/queue/status"):
             query = self.path.split("?", 1)[1] if "?" in self.path else ""
@@ -228,6 +320,18 @@ class LobbyHandler(BaseHTTPRequestHandler):
         _json(self, HTTPStatus.NOT_FOUND, {"error": "not_found"})
 
     def do_POST(self) -> None:  # noqa: N802
+        if not _is_playtest_key_valid(self):
+            _json(self, HTTPStatus.UNAUTHORIZED, {"error": "invalid_playtest_key"})
+            return
+        with LOCK:
+            retry_ms = _check_rate_limit(_client_ip(self), self.path)
+        if retry_ms > 0:
+            _json(
+                self,
+                HTTPStatus.TOO_MANY_REQUESTS,
+                {"error": "rate_limited", "retry_in_ms": retry_ms, "timestamp_ms": _timestamp_ms()},
+            )
+            return
         payload = _read_json(self)
 
         if self.path == "/v1/hello":

@@ -14,6 +14,7 @@ var _poll_timer: float = 0.0
 var _status_line: String = "Idle"
 var _session_id: String = ""
 var _player_id: String = ""
+var _playtest_key: String = ""
 
 @onready var info_label: Label = $HUD/Info
 
@@ -177,6 +178,8 @@ func _request_json(path: String, method: HTTPClient.Method, body: String) -> Dic
 	var req := HTTPRequest.new()
 	add_child(req)
 	var headers := PackedStringArray(["Content-Type: application/json"])
+	if not _playtest_key.is_empty():
+		headers.append("X-Playtest-Key: %s" % _playtest_key)
 	var err := req.request(lobby_base_url + path, headers, method, body)
 	if err != OK:
 		req.queue_free()
@@ -209,9 +212,14 @@ func _apply_lobby_url_overrides() -> void:
 	var env_url := OS.get_environment("NEON_LOBBY_URL")
 	if not env_url.is_empty():
 		lobby_base_url = env_url
+	var env_key := OS.get_environment("NEON_PLAYTEST_KEY")
+	if not env_key.is_empty():
+		_playtest_key = env_key
 	for arg in OS.get_cmdline_args():
 		if arg.begins_with("--lobby-url="):
 			lobby_base_url = arg.get_slice("=", 1)
+		elif arg.begins_with("--playtest-key="):
+			_playtest_key = arg.get_slice("=", 1)
 
 func _is_http_ok(data: Dictionary) -> bool:
 	var code := int(data.get("_http_code", 0))

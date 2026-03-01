@@ -77,6 +77,10 @@ Default lobby URL is `http://127.0.0.1:8080`.
 Override if needed:
 - env: `NEON_LOBBY_URL=http://<host>:<port> ./run_game.sh`
 - arg: `./run_game.sh --lobby-url=http://<host>:<port>`
+- optional playtest key:
+  - env: `NEON_PLAYTEST_KEY=<shared-key>`
+  - arg: `--playtest-key=<shared-key>`
+  - works with `--test-human-mode` / `--test-mixed-mode` to secure managed lobby + spawned clients
 
 Useful startup overrides:
 - `--skip-mode-select` (bypass menu)
