@@ -48,9 +48,20 @@ var weapon_system: Node = null
 var selected_weapon: int = WeaponSlot.WeaponType.LASER
 var selection_strength: Dictionary = {}
 var flash_time: float = 0.0
+var _panel_style: StyleBoxFlat = StyleBoxFlat.new()
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_panel_style.bg_color = PANEL_BG
+	_panel_style.border_color = PANEL_BORDER
+	_panel_style.border_width_left = 1
+	_panel_style.border_width_top = 1
+	_panel_style.border_width_right = 1
+	_panel_style.border_width_bottom = 1
+	_panel_style.corner_radius_top_left = PANEL_RADIUS
+	_panel_style.corner_radius_top_right = PANEL_RADIUS
+	_panel_style.corner_radius_bottom_left = PANEL_RADIUS
+	_panel_style.corner_radius_bottom_right = PANEL_RADIUS
 	for weapon_type in WEAPON_ORDER:
 		selection_strength[weapon_type] = 0.0
 	_resolve_player()
@@ -133,42 +144,42 @@ func _smooth(value: float, target: float, delta: float, speed: float) -> float:
 
 func _draw() -> void:
 	var rect = Rect2(Vector2.ZERO, size)
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = PANEL_BG
-	panel_style.border_color = PANEL_BORDER
-	panel_style.border_width_left = 1
-	panel_style.border_width_top = 1
-	panel_style.border_width_right = 1
-	panel_style.border_width_bottom = 1
-	panel_style.corner_radius_top_left = PANEL_RADIUS
-	panel_style.corner_radius_top_right = PANEL_RADIUS
-	panel_style.corner_radius_bottom_left = PANEL_RADIUS
-	panel_style.corner_radius_bottom_right = PANEL_RADIUS
-	draw_style_box(panel_style, rect)
+	draw_style_box(_panel_style, rect)
 	draw_rect(rect.grow(-3.0), PANEL_GLOW, false, 1.0)
 
+	var width_scale = clampf(size.x / 288.0, 0.72, 1.5)
+	var height_scale = clampf(size.y / 184.0, 0.72, 1.5)
+	var hud_scale = minf(width_scale, height_scale)
+	var padding: Vector2 = PADDING * hud_scale
+	var row_height: float = ROW_HEIGHT * hud_scale
+	var row_gap: float = ROW_GAP * hud_scale
+	var ring_radius: float = RING_RADIUS * hud_scale
+	var ring_width: float = maxf(1.2, RING_WIDTH * hud_scale)
+	var bar_width: float = BAR_WIDTH * hud_scale
+	var bar_height: float = maxf(3.0, BAR_HEIGHT * hud_scale)
+
 	var font = get_theme_default_font()
-	var font_size = max(10, int(get_theme_default_font_size() * 0.85))
+	var font_size = max(10, int(get_theme_default_font_size() * 0.85 * hud_scale))
 	var small_size = max(9, int(font_size * 0.8))
 	var percent_size = max(8, int(small_size * 0.9))
 
-	var y = PADDING.y
+	var y = padding.y
 	for weapon_type in WEAPON_ORDER:
-		var center_y = y + ROW_HEIGHT * 0.5
+		var center_y = y + row_height * 0.5
 		var glow = float(selection_strength.get(weapon_type, 0.0))
 		var flash = (flash_time / 0.22) if flash_time > 0.0 and weapon_type == selected_weapon else 0.0
 		var glow_alpha = clamp(glow * 0.25 + flash * 0.25, 0.0, 0.4)
 		if glow_alpha > 0.0:
 			var glow_color = Color(ROW_GLOW.r, ROW_GLOW.g, ROW_GLOW.b, glow_alpha)
-			draw_rect(Rect2(PADDING.x * 0.5, y - 3.0, size.x - PADDING.x, ROW_HEIGHT + 6.0), glow_color, true)
+			draw_rect(Rect2(padding.x * 0.5, y - 3.0 * hud_scale, size.x - padding.x, row_height + 6.0 * hud_scale), glow_color, true)
 
 		var label = "%s %s" % [WEAPON_KEYS[weapon_type], WEAPON_NAMES[weapon_type]]
-		draw_string(font, Vector2(PADDING.x, center_y - 5.0), label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, TEXT_PRIMARY)
+		draw_string(font, Vector2(padding.x, center_y - 5.0 * hud_scale), label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, TEXT_PRIMARY)
 
 		if weapon_system != null and weapon_system.has_method("get_weapon_ammo"):
 			var ammo = weapon_system.get_weapon_ammo(weapon_type)
 			var ammo_text = "AMMO %d" % ammo
-			draw_string(font, Vector2(PADDING.x, center_y + 10.0), ammo_text, HORIZONTAL_ALIGNMENT_LEFT, -1, small_size, TEXT_MUTED)
+			draw_string(font, Vector2(padding.x, center_y + 10.0 * hud_scale), ammo_text, HORIZONTAL_ALIGNMENT_LEFT, -1, small_size, TEXT_MUTED)
 
 		var cap = _get_capacity(weapon_type)
 		var ammo_value = 0
@@ -178,17 +189,17 @@ func _draw() -> void:
 		if cap > 0:
 			ratio = clamp(float(ammo_value) / float(cap), 0.0, 1.0)
 
-		var ring_center = Vector2(size.x - PADDING.x - RING_RADIUS, center_y)
-		var bar_right = ring_center.x - RING_RADIUS - 10.0
-		var bar_rect = Rect2(bar_right - BAR_WIDTH, center_y - BAR_HEIGHT * 0.5, BAR_WIDTH, BAR_HEIGHT)
+		var ring_center = Vector2(size.x - padding.x - ring_radius, center_y)
+		var bar_right = ring_center.x - ring_radius - 10.0 * hud_scale
+		var bar_rect = Rect2(bar_right - bar_width, center_y - bar_height * 0.5, bar_width, bar_height)
 
 		draw_rect(bar_rect, BAR_BG, true)
 		if ratio > 0.0:
 			draw_rect(Rect2(bar_rect.position, Vector2(bar_rect.size.x * ratio, bar_rect.size.y)), BAR_FILL, true)
 
-		draw_arc(ring_center, RING_RADIUS, -PI * 0.5, TAU - PI * 0.5, 64, RING_BG, RING_WIDTH)
+		draw_arc(ring_center, ring_radius, -PI * 0.5, TAU - PI * 0.5, 64, RING_BG, ring_width)
 		if ratio > 0.0:
-			draw_arc(ring_center, RING_RADIUS, -PI * 0.5, TAU * ratio - PI * 0.5, 64, RING_FILL, RING_WIDTH)
+			draw_arc(ring_center, ring_radius, -PI * 0.5, TAU * ratio - PI * 0.5, 64, RING_FILL, ring_width)
 
 		var percent = int(round(ratio * 100.0))
 		var percent_text = "%d%%" % percent
@@ -196,7 +207,7 @@ func _draw() -> void:
 		var baseline = ring_center.y + text_size.y * 0.35
 		draw_string(font, Vector2(ring_center.x - text_size.x * 0.5, baseline), percent_text, HORIZONTAL_ALIGNMENT_LEFT, -1, percent_size, TEXT_PRIMARY)
 
-		y += ROW_HEIGHT + ROW_GAP
+		y += row_height + row_gap
 
 func _get_capacity(weapon_type: int) -> int:
 	if weapon_system == null:

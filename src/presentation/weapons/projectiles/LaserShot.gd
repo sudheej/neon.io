@@ -31,6 +31,10 @@ static var sfx_cache: Array[AudioStream] = []
 static var sfx_checked := false
 var laser_sfx: Array[AudioStream] = []
 
+static func clear_sfx_cache() -> void:
+	sfx_cache.clear()
+	sfx_checked = false
+
 func _ready() -> void:
 	rng.randomize()
 	var mat = ShaderMaterial.new()
@@ -123,6 +127,7 @@ func _play_laser_sfx() -> void:
 		world.add_child(player)
 	else:
 		get_tree().current_scene.add_child(player)
+	player.add_to_group("transient_sfx")
 	player.play()
 	player.finished.connect(player.queue_free)
 

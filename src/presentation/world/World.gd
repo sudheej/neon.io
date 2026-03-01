@@ -3,6 +3,7 @@ extends Node2D
 const WeaponSlot = preload("res://src/domain/weapons/WeaponSlot.gd")
 const BoostOrbScript = preload("res://src/presentation/world/BoostOrb.gd")
 const SessionConfig = preload("res://src/infrastructure/network/SessionConfig.gd")
+const LaserShotScript = preload("res://src/presentation/weapons/projectiles/LaserShot.gd")
 
 const ENEMY_START: int = 5
 const ENEMY_SPAWN_RADIUS: float = 260.0
@@ -49,6 +50,7 @@ const LEADERBOARD_CONTEST_MIN_ENEMIES: int = 4
 const LEADERBOARD_CONTEST_UNLOCK_MAX_RANK: int = 3
 const AWESOME_SFX_PATH: String = "res://assets/audio/ui/awesome.wav"
 const MESSAGE_SFX_PATH: String = "res://assets/audio/ui/message.wav"
+const HUD_REF_RESOLUTION := Vector2(1920.0, 1080.0)
 const PlayerScene = preload("res://src/presentation/scenes/Player.tscn")
 const AIControllerScript = preload("res://src/input/AIInputSource.gd")
 
@@ -101,6 +103,8 @@ var _net_debug_label: Label = null
 @onready var hud_label: Label = $HUD/InfoPanel/Body/Info
 @onready var low_health_banner = $HUD/LowHealthBanner
 @onready var mini_map: Control = $HUD/MiniMap
+@onready var info_panel: Control = $HUD/InfoPanel
+@onready var weapon_hud_panel: Control = $HUD/WeaponHUD
 @onready var game_over_layer: CanvasLayer = $GameOver
 @onready var game_over_time: Label = $GameOver/TimeSurvived
 @onready var boost_orbs_root: Node2D = $BoostOrbs
@@ -120,12 +124,67 @@ func _ready() -> void:
 	_connect_combatant_death_signals()
 	_bind_input_sources()
 	_bind_hud_targets()
+	get_viewport().size_changed.connect(_layout_hud)
+	_layout_hud()
 	if mini_map != null:
 		minimap_visible_target = mini_map.visible
 	audio_muted = _is_master_bus_muted()
 	_ensure_event_audio_loaded()
 	_maybe_schedule_hud_screenshot()
 	_setup_net_debug_hud()
+
+func _exit_tree() -> void:
+	_cleanup_transient_audio()
+	awesome_sfx = null
+	message_sfx = null
+	pending_general_sfx = null
+	event_audio_loaded = false
+	LaserShotScript.clear_sfx_cache()
+
+func _cleanup_transient_audio() -> void:
+	for node in get_tree().get_nodes_in_group("transient_sfx"):
+		if node == null or not is_instance_valid(node):
+			continue
+		if node.has_method("stop"):
+			node.call("stop")
+		node.queue_free()
+
+func _layout_hud() -> void:
+	var vp := get_viewport_rect().size
+	if vp.x <= 0.0 or vp.y <= 0.0:
+		return
+	var scale := minf(vp.x / HUD_REF_RESOLUTION.x, vp.y / HUD_REF_RESOLUTION.y)
+	scale = clampf(scale, 0.68, 1.3)
+	var margin := 12.0 * scale
+	var panel_gap := 8.0 * scale
+
+	if info_panel != null:
+		info_panel.offset_left = -190.0 * scale
+		info_panel.offset_top = 10.0 * scale
+		info_panel.offset_right = -margin
+		info_panel.offset_bottom = info_panel.offset_top + 62.0 * scale
+
+	if weapon_hud_panel != null:
+		var hud_top := (10.0 + 62.0 + 44.0) * scale + panel_gap * 2.0
+		var hud_height := 196.0 * scale
+		weapon_hud_panel.offset_left = -304.0 * scale
+		weapon_hud_panel.offset_top = hud_top
+		weapon_hud_panel.offset_right = -margin
+		weapon_hud_panel.offset_bottom = hud_top + hud_height
+		if low_health_banner != null:
+			var banner_top := weapon_hud_panel.offset_bottom + panel_gap
+			var banner_height := 44.0 * scale
+			low_health_banner.offset_left = -298.0 * scale
+			low_health_banner.offset_top = banner_top
+			low_health_banner.offset_right = -margin
+			low_health_banner.offset_bottom = minf(vp.y - margin, banner_top + banner_height)
+
+	if mini_map != null:
+		var mini_size := 224.0 * scale
+		mini_map.offset_left = margin
+		mini_map.offset_top = margin
+		mini_map.offset_right = margin + mini_size
+		mini_map.offset_bottom = margin + mini_size
 
 func _input(event: InputEvent) -> void:
 	if not input_enabled:
@@ -922,6 +981,7 @@ func _play_event_sfx(stream: AudioStream, volume_db: float) -> void:
 	audio.volume_db = volume_db
 	audio.pitch_scale = 1.0
 	add_child(audio)
+	audio.add_to_group("transient_sfx")
 	audio.play()
 	audio.finished.connect(audio.queue_free)
 
@@ -1074,6 +1134,8 @@ func _should_return_to_lobby_on_death() -> bool:
 	if dedicated_server:
 		return false
 	if not _is_online_mode():
+		return false
+	if not _is_online_client():
 		return false
 	return SessionConfig.auto_requeue_on_death
 

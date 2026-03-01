@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neon.io Playtest Portal</title>
+  <style>
+    :root {
+      --bg-a: #05090d;
+      --bg-b: #0d1821;
+      --panel: rgba(14, 26, 35, 0.88);
+      --line: #2ce6c7;
+      --text: #eaf6ff;
+      --muted: #93afc0;
+      --warn: #ffcf70;
+      --danger: #ff7474;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Rajdhani", "Exo 2", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 10% -20%, #1c3a4d 0%, transparent 45%),
+        radial-gradient(circle at 95% 15%, #0a574f 0%, transparent 30%),
+        linear-gradient(135deg, var(--bg-a), var(--bg-b));
+      padding: 24px;
+      display: grid;
+      place-items: center;
+    }
+
+    .card {
+      width: min(980px, 100%);
+      border: 1px solid color-mix(in srgb, var(--line), transparent 55%);
+      background: var(--panel);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: 0 0 0 1px rgba(44, 230, 199, 0.1), 0 18px 45px rgba(0, 0, 0, 0.38);
+      backdrop-filter: blur(6px);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.6rem, 2.4vw, 2.6rem);
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: #b9fff2;
+    }
+
+    .sub {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 1.05rem;
+    }
+
+    .grid {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 14px;
+    }
+
+    .panel {
+      border: 1px solid rgba(135, 177, 202, 0.25);
+      border-radius: 14px;
+      padding: 14px;
+      background: rgba(7, 16, 23, 0.9);
+    }
+
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 1.05rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #b0ecff;
+    }
+
+    .btns {
+      display: grid;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .btn {
+      display: inline-block;
+      text-decoration: none;
+      color: #041012;
+      font-weight: 700;
+      background: linear-gradient(90deg, #2ce6c7, #7effd0);
+      padding: 10px 12px;
+      border-radius: 10px;
+      text-align: center;
+      border: 1px solid #86ffe7;
+      transition: transform 120ms ease, filter 120ms ease;
+    }
+
+    .btn:hover { transform: translateY(-1px); filter: brightness(1.06); }
+    .btn.alt { background: linear-gradient(90deg, #90dbff, #76fff5); }
+
+    ul, ol { margin: 0; padding-left: 18px; color: #d6e5ef; }
+    li + li { margin-top: 8px; }
+
+    .inline-code {
+      font-family: "JetBrains Mono", "Cascadia Mono", monospace;
+      color: #b7f8ff;
+      background: rgba(137, 213, 255, 0.1);
+      border: 1px solid rgba(137, 213, 255, 0.24);
+      border-radius: 7px;
+      padding: 2px 6px;
+      white-space: nowrap;
+    }
+
+    .note {
+      margin-top: 14px;
+      font-size: 0.95rem;
+      color: var(--warn);
+    }
+
+    .warn {
+      margin-top: 8px;
+      color: var(--danger);
+      font-size: 0.92rem;
+    }
+
+    .footer {
+      margin-top: 16px;
+      color: #9ab3c3;
+      font-size: 0.86rem;
+      border-top: 1px solid rgba(143, 184, 209, 0.2);
+      padding-top: 12px;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>Neon.io Closed Playtest</h1>
+    <p class="sub">Fast top-down combat prototype. Build timestamp: <span id="buildStamp">pending</span></p>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>Downloads</h2>
+        <p>Pick your platform:</p>
+        <div class="btns">
+          <a class="btn" id="linuxLink" href="#" rel="noopener">Linux Client</a>
+          <a class="btn alt" id="windowsLink" href="#" rel="noopener">Windows Client</a>
+        </div>
+        <p class="note">If a link is down, ping the organizer for the latest build link.</p>
+      </article>
+
+      <article class="panel">
+        <h2>Quick Start</h2>
+        <ol>
+          <li>Download your platform build and extract if zipped.</li>
+          <li>Launch the starter script/binary:
+            <span class="inline-code">start_client.sh</span> (Linux) or
+            <span class="inline-code">start_client.bat</span> (Windows).
+          </li>
+          <li>Move with WASD/Arrows, buy/select weapons with keys 1/2/3/4.</li>
+          <li>Press <span class="inline-code">R</span> to restart after death.</li>
+          <li>Send feedback with timestamp + what happened + expected behavior.</li>
+        </ol>
+      </article>
+
+      <article class="panel">
+        <h2>Gameplay Notes</h2>
+        <ul>
+          <li>Goal: survive as long as possible while expanding and managing credits.</li>
+          <li>Combat modes in this build are preconfigured by launcher settings.</li>
+          <li>Spread and stun are useful for crowd control at mid-range.</li>
+          <li>Shift + direction lets you expand/select active cell.</li>
+        </ul>
+      </article>
+
+      <article class="panel">
+        <h2>Feedback Format</h2>
+        <ul>
+          <li><strong>Category:</strong> crash, gameplay, UI, networking, performance</li>
+          <li><strong>Repro:</strong> steps from launch to issue</li>
+          <li><strong>Logs:</strong> include terminal output if possible</li>
+          <li><strong>System:</strong> OS + GPU + approx FPS</li>
+        </ul>
+        <p class="warn">Private test build. Please do not redistribute binaries or link.</p>
+      </article>
+    </section>
+
+    <p class="footer">Protected page. Unauthorized access is blocked.</p>
+  </main>
+
+  <script src="./portal-config.js"></script>
+  <script>
+    const fallback = Object.assign({
+      linux_url: "https://example.com/neon/linux",
+      windows_url: "https://example.com/neon/windows",
+      build_stamp: new Date().toISOString().slice(0, 19).replace("T", " ") + " UTC"
+    }, window.PLAYTEST_PORTAL || {});
+
+    async function loadPortalConfig() {
+      try {
+        const res = await fetch("/portal-config.json", { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error("config http " + res.status);
+        }
+        const remote = await res.json();
+        return Object.assign({}, fallback, remote || {});
+      } catch (_err) {
+        return fallback;
+      }
+    }
+
+    loadPortalConfig().then((cfg) => {
+      document.getElementById("linuxLink").href = cfg.linux_url;
+      document.getElementById("windowsLink").href = cfg.windows_url;
+      document.getElementById("buildStamp").textContent = cfg.build_stamp;
+    });
+  </script>
+</body>
+</html>
