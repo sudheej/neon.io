@@ -16,11 +16,33 @@ var _session_id: String = ""
 var _player_id: String = ""
 var _playtest_key: String = ""
 
-@onready var info_label: Label = $HUD/Info
+@onready var info_label: Label = $HUD/Frame/Root/Content/QueuePanel/Margin/Body/Info
+@onready var mode_value_label: Label = $HUD/Frame/Root/Content/QueuePanel/Margin/Body/ModeValue
+@onready var session_value_label: Label = $HUD/Frame/Root/Content/QueuePanel/Margin/Body/SessionValue
+@onready var player_value_label: Label = $HUD/Frame/Root/Content/QueuePanel/Margin/Body/PlayerValue
+@onready var start_button: Button = $HUD/Frame/Root/Content/QueuePanel/Margin/Body/StartButton
+@onready var rail_mode_labels: Array[Label] = [
+	$HUD/Frame/Root/Content/LeftRail/RailBody/RailMode1,
+	$HUD/Frame/Root/Content/LeftRail/RailBody/RailMode2,
+	$HUD/Frame/Root/Content/LeftRail/RailBody/RailMode3
+]
+@onready var mode_cards: Array[PanelContainer] = [
+	$HUD/Frame/Root/Content/ModeGrid/OfflineCard,
+	$HUD/Frame/Root/Content/ModeGrid/MixedCard,
+	$HUD/Frame/Root/Content/ModeGrid/HumanCard
+]
+@onready var mode_buttons: Array[Button] = [
+	$HUD/Frame/Root/Content/ModeGrid/OfflineCard/Margin/Body/SelectButton,
+	$HUD/Frame/Root/Content/ModeGrid/MixedCard/Margin/Body/SelectButton,
+	$HUD/Frame/Root/Content/ModeGrid/HumanCard/Margin/Body/SelectButton
+]
 
 func _ready() -> void:
 	randomize()
 	_apply_lobby_url_overrides()
+	for i in range(mode_buttons.size()):
+		mode_buttons[i].pressed.connect(_on_mode_button_pressed.bind(i))
+	start_button.pressed.connect(_start_queue_flow)
 	_selected_index = maxi(MODES.find(SessionConfig.selected_mode), 0)
 	_session_id = _build_session_id()
 	_player_id = _build_player_id()
@@ -48,8 +70,15 @@ func _unhandled_input(event: InputEvent) -> void:
 			_select_mode(1)
 		elif key_event.keycode == KEY_3:
 			_select_mode(2)
+		elif key_event.keycode == KEY_LEFT:
+			_select_mode((_selected_index - 1 + MODES.size()) % MODES.size())
+		elif key_event.keycode == KEY_RIGHT:
+			_select_mode((_selected_index + 1) % MODES.size())
 		elif key_event.keycode == KEY_ENTER or key_event.keycode == KEY_KP_ENTER:
 			_start_queue_flow()
+
+func _on_mode_button_pressed(index: int) -> void:
+	_select_mode(index)
 
 func _select_mode(index: int) -> void:
 	if _busy or _polling:
@@ -58,7 +87,7 @@ func _select_mode(index: int) -> void:
 	_update_label()
 
 func _start_queue_flow() -> void:
-	if _busy:
+	if _busy or _polling:
 		return
 	var mode_name := _current_mode()
 	if mode_name == "offline_ai":
@@ -295,9 +324,21 @@ func _build_player_id() -> String:
 
 func _update_label() -> void:
 	SessionConfig.selected_mode = _current_mode()
-	if info_label == null:
+	if info_label == null or start_button == null:
 		return
-	info_label.text = "LOBBY\nMode: %s\n[1] offline_ai  [2] mixed  [3] human_only\nEnter: queue/start\n%s" % [
-		SessionConfig.selected_mode,
-		_status_line
-	]
+	info_label.text = _status_line
+	mode_value_label.text = "Mode: %s" % SessionConfig.selected_mode
+	session_value_label.text = "Session: %s" % _session_id
+	player_value_label.text = "Player: %s" % _player_id
+	start_button.disabled = _busy or _polling
+	if _busy:
+		start_button.text = "WORKING..."
+	elif _polling:
+		start_button.text = "QUEUED"
+	else:
+		start_button.text = "QUEUE / START"
+	for i in range(mode_cards.size()):
+		var selected := i == _selected_index
+		mode_cards[i].modulate = Color(1.0, 1.0, 1.0, 1.0) if selected else Color(0.68, 0.75, 0.85, 0.96)
+		mode_buttons[i].text = "SELECTED" if selected else "SELECT"
+		rail_mode_labels[i].modulate = Color(1.0, 1.0, 1.0, 1.0) if selected else Color(0.78, 0.9, 0.97, 0.72)
