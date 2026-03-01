@@ -6,6 +6,7 @@ VERBOSE_FLAG=""
 EXTRA_ARGS=()
 TEST_HUMAN_MODE=0
 TEST_MIXED_MODE=0
+PLAYTEST_KEY_OVERRIDE="${NEON_PLAYTEST_KEY:-}"
 for arg in "$@"; do
   case "$arg" in
     --verbose)
@@ -16,6 +17,9 @@ for arg in "$@"; do
       ;;
     --test-mixed-mode)
       TEST_MIXED_MODE=1
+      ;;
+    --playtest-key=*)
+      PLAYTEST_KEY_OVERRIDE="${arg#*=}"
       ;;
     --hud-shot|--hud-shot-delay=*|--hud-shot-path=*)
       EXTRA_ARGS+=("$arg")
@@ -70,6 +74,7 @@ start_lobby_service() {
     LOBBY_PORT="$LOBBY_PORT_DEFAULT" \
     MIN_PLAYERS_TO_START_HUMAN_ONLY="$min_human" \
     MIN_PLAYERS_TO_START_MIXED="$min_mixed" \
+    PLAYTEST_KEY="$PLAYTEST_KEY_OVERRIDE" \
     nohup python3 app.py >/tmp/neon_lobby.log 2>&1 &
     echo $! >/tmp/neon_lobby.pid
   )
@@ -168,6 +173,7 @@ launch_human_mode_clients() {
       NEON_MODE=human_only \
       NEON_AUTO_START=1 \
       NEON_LOBBY_URL="$LOBBY_URL" \
+      NEON_PLAYTEST_KEY="$PLAYTEST_KEY_OVERRIDE" \
       NEON_NET_DEBUG_HUD=1 \
       NEON_NET_LOG=1 \
       "$BIN" $VERBOSE_FLAG \
@@ -199,6 +205,7 @@ launch_mixed_mode_clients() {
       NEON_MODE=mixed \
       NEON_AUTO_START=1 \
       NEON_LOBBY_URL="$LOBBY_URL" \
+      NEON_PLAYTEST_KEY="$PLAYTEST_KEY_OVERRIDE" \
       NEON_NET_DEBUG_HUD=1 \
       NEON_NET_LOG=1 \
       "$BIN" $VERBOSE_FLAG \
@@ -242,6 +249,10 @@ fi
 
 if ! is_headless_request; then
   ensure_lobby_service
+fi
+
+if [[ -n "$PLAYTEST_KEY_OVERRIDE" ]]; then
+  exec env NEON_PLAYTEST_KEY="$PLAYTEST_KEY_OVERRIDE" "$BIN" $VERBOSE_FLAG --path "$ROOT_DIR" "${EXTRA_ARGS[@]}"
 fi
 
 exec "$BIN" $VERBOSE_FLAG --path "$ROOT_DIR" "${EXTRA_ARGS[@]}"
