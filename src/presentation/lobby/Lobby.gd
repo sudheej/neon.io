@@ -2,52 +2,43 @@ extends Node2D
 
 const SessionConfig = preload("res://src/infrastructure/network/SessionConfig.gd")
 
-const MODES: PackedStringArray = ["offline_ai", "mixed", "human_only"]
+const WORLD_SCENE := "res://scenes/World.tscn"
+const MAIN_SCENE := "res://scenes/Main.tscn"
+const ONLINE_MODES := {"mixed": true, "human_only": true}
 
 @export var lobby_base_url: String = "http://127.0.0.1:8080"
 @export var queue_poll_interval: float = 1.0
 
-var _selected_index: int = 0
 var _busy: bool = false
 var _polling: bool = false
 var _poll_timer: float = 0.0
-var _status_line: String = "Idle"
+var _status_line: String = "Ready"
+var _mode_name: String = "mixed"
 var _session_id: String = ""
 var _player_id: String = ""
 var _playtest_key: String = ""
 
-@onready var info_label: Label = $HUD/Frame/Root/Content/QueuePanel/Margin/Body/Info
-@onready var mode_value_label: Label = $HUD/Frame/Root/Content/QueuePanel/Margin/Body/ModeValue
-@onready var session_value_label: Label = $HUD/Frame/Root/Content/QueuePanel/Margin/Body/SessionValue
-@onready var player_value_label: Label = $HUD/Frame/Root/Content/QueuePanel/Margin/Body/PlayerValue
-@onready var start_button: Button = $HUD/Frame/Root/Content/QueuePanel/Margin/Body/StartButton
-@onready var rail_mode_labels: Array[Label] = [
-	$HUD/Frame/Root/Content/LeftRail/RailBody/RailMode1,
-	$HUD/Frame/Root/Content/LeftRail/RailBody/RailMode2,
-	$HUD/Frame/Root/Content/LeftRail/RailBody/RailMode3
-]
-@onready var mode_cards: Array[PanelContainer] = [
-	$HUD/Frame/Root/Content/ModeGrid/OfflineCard,
-	$HUD/Frame/Root/Content/ModeGrid/MixedCard,
-	$HUD/Frame/Root/Content/ModeGrid/HumanCard
-]
-@onready var mode_buttons: Array[Button] = [
-	$HUD/Frame/Root/Content/ModeGrid/OfflineCard/Margin/Body/SelectButton,
-	$HUD/Frame/Root/Content/ModeGrid/MixedCard/Margin/Body/SelectButton,
-	$HUD/Frame/Root/Content/ModeGrid/HumanCard/Margin/Body/SelectButton
-]
+@onready var status_label: Label = $HUD/Center/Panel/Margin/VBox/Status
+@onready var mode_value_label: Label = $HUD/Center/Panel/Margin/VBox/ModeValue
+@onready var session_value_label: Label = $HUD/Center/Panel/Margin/VBox/SessionValue
+@onready var player_value_label: Label = $HUD/Center/Panel/Margin/VBox/PlayerValue
+@onready var queue_button: Button = $HUD/Center/Panel/Margin/VBox/Buttons/QueueButton
+@onready var back_button: Button = $HUD/Center/Panel/Margin/VBox/Buttons/BackButton
 
 func _ready() -> void:
 	randomize()
 	_apply_lobby_url_overrides()
-	for i in range(mode_buttons.size()):
-		mode_buttons[i].pressed.connect(_on_mode_button_pressed.bind(i))
-	start_button.pressed.connect(_start_queue_flow)
-	_selected_index = maxi(MODES.find(SessionConfig.selected_mode), 0)
+	_mode_name = String(SessionConfig.selected_mode)
+	if not ONLINE_MODES.has(_mode_name):
+		_mode_name = "mixed"
+		SessionConfig.selected_mode = _mode_name
 	_session_id = _build_session_id()
 	_player_id = _build_player_id()
-	if SessionConfig.requeue_on_lobby_entry and _current_mode() != "offline_ai":
-		SessionConfig.requeue_on_lobby_entry = false
+	if queue_button != null:
+		queue_button.pressed.connect(_start_queue_flow)
+	if back_button != null:
+		back_button.pressed.connect(_go_to_main)
+	if _should_auto_queue_on_entry():
 		_start_queue_flow()
 	else:
 		_update_label()
@@ -63,39 +54,16 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		var key_event: InputEventKey = event as InputEventKey
-		if key_event.keycode == KEY_1:
-			_select_mode(0)
-		elif key_event.keycode == KEY_2:
-			_select_mode(1)
-		elif key_event.keycode == KEY_3:
-			_select_mode(2)
-		elif key_event.keycode == KEY_LEFT:
-			_select_mode((_selected_index - 1 + MODES.size()) % MODES.size())
-		elif key_event.keycode == KEY_RIGHT:
-			_select_mode((_selected_index + 1) % MODES.size())
-		elif key_event.keycode == KEY_ENTER or key_event.keycode == KEY_KP_ENTER:
+		var key_event := event as InputEventKey
+		if key_event.keycode == KEY_ENTER or key_event.keycode == KEY_KP_ENTER:
 			_start_queue_flow()
-
-func _on_mode_button_pressed(index: int) -> void:
-	_select_mode(index)
-
-func _select_mode(index: int) -> void:
-	if _busy or _polling:
-		return
-	_selected_index = clampi(index, 0, MODES.size() - 1)
-	_update_label()
+		elif key_event.keycode == KEY_ESCAPE:
+			_go_to_main()
 
 func _start_queue_flow() -> void:
 	if _busy or _polling:
 		return
-	var mode_name := _current_mode()
-	if mode_name == "offline_ai":
-		SessionConfig.configure_offline(mode_name)
-		SessionConfig.requeue_on_lobby_entry = false
-		get_tree().change_scene_to_file("res://scenes/World.tscn")
-		return
-	_queue_online_mode(mode_name)
+	_queue_online_mode(_mode_name)
 
 func _queue_online_mode(mode_name: String) -> void:
 	_busy = true
@@ -140,8 +108,7 @@ func _poll_queue_status() -> void:
 	if _busy:
 		return
 	_busy = true
-	var mode_name := _current_mode()
-	var query := "/v1/queue/status?session_id=%s&mode=%s" % [_session_id, mode_name]
+	var query := "/v1/queue/status?session_id=%s&mode=%s" % [_session_id, _mode_name]
 	var payload := await _get_json(query)
 	_busy = false
 	if payload.is_empty() or int(payload.get("_http_code", 500)) >= 400:
@@ -185,7 +152,7 @@ func _join_assigned_match(payload: Dictionary) -> void:
 		host = endpoint.get_slice(":", 0)
 		port = int(endpoint.get_slice(":", 1))
 	SessionConfig.configure_online_client(
-		_current_mode(),
+		_mode_name,
 		host,
 		port,
 		_session_id,
@@ -195,7 +162,11 @@ func _join_assigned_match(payload: Dictionary) -> void:
 	)
 	SessionConfig.local_actor_id = String(payload.get("actor_id", payload.get("local_actor_id", "player")))
 	SessionConfig.requeue_on_lobby_entry = false
-	get_tree().change_scene_to_file("res://scenes/World.tscn")
+	get_tree().change_scene_to_file(WORLD_SCENE)
+
+func _go_to_main() -> void:
+	SessionConfig.requeue_on_lobby_entry = false
+	get_tree().change_scene_to_file(MAIN_SCENE)
 
 func _post_json(path: String, payload: Dictionary) -> Dictionary:
 	return await _request_json(path, HTTPClient.METHOD_POST, JSON.stringify(payload))
@@ -250,6 +221,17 @@ func _apply_lobby_url_overrides() -> void:
 		elif arg.begins_with("--playtest-key="):
 			_playtest_key = arg.get_slice("=", 1)
 
+func _should_auto_queue_on_entry() -> bool:
+	if SessionConfig.requeue_on_lobby_entry:
+		return true
+	var env_auto := OS.get_environment("NEON_AUTO_QUEUE").to_lower()
+	if env_auto == "1" or env_auto == "true":
+		return true
+	for arg in OS.get_cmdline_args():
+		if arg == "--auto-queue":
+			return true
+	return false
+
 func _is_http_ok(data: Dictionary) -> bool:
 	var code := int(data.get("_http_code", 0))
 	return code >= 200 and code < 300
@@ -299,9 +281,6 @@ func _http_request_result_name(result_code: int) -> String:
 		_:
 			return "request_result_%d" % result_code
 
-func _current_mode() -> String:
-	return MODES[_selected_index]
-
 func _set_error(message: String) -> void:
 	_busy = false
 	_polling = false
@@ -323,22 +302,16 @@ func _build_player_id() -> String:
 	return "player_%d_%d" % [OS.get_process_id(), Time.get_ticks_usec()]
 
 func _update_label() -> void:
-	SessionConfig.selected_mode = _current_mode()
-	if info_label == null or start_button == null:
+	if status_label == null or queue_button == null:
 		return
-	info_label.text = _status_line
-	mode_value_label.text = "Mode: %s" % SessionConfig.selected_mode
+	status_label.text = _status_line
+	mode_value_label.text = "Mode: %s" % _mode_name
 	session_value_label.text = "Session: %s" % _session_id
 	player_value_label.text = "Player: %s" % _player_id
-	start_button.disabled = _busy or _polling
+	queue_button.disabled = _busy or _polling
 	if _busy:
-		start_button.text = "WORKING..."
+		queue_button.text = "CONNECTING..."
 	elif _polling:
-		start_button.text = "QUEUED"
+		queue_button.text = "QUEUED"
 	else:
-		start_button.text = "QUEUE / START"
-	for i in range(mode_cards.size()):
-		var selected := i == _selected_index
-		mode_cards[i].modulate = Color(1.0, 1.0, 1.0, 1.0) if selected else Color(0.68, 0.75, 0.85, 0.96)
-		mode_buttons[i].text = "SELECTED" if selected else "SELECT"
-		rail_mode_labels[i].modulate = Color(1.0, 1.0, 1.0, 1.0) if selected else Color(0.78, 0.9, 0.97, 0.72)
+		queue_button.text = "QUEUE NOW"

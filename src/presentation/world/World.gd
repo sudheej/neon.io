@@ -53,6 +53,7 @@ const MESSAGE_SFX_PATH: String = "res://assets/audio/ui/message.wav"
 const HUD_REF_RESOLUTION := Vector2(1920.0, 1080.0)
 const PlayerScene = preload("res://src/presentation/scenes/Player.tscn")
 const AIControllerScript = preload("res://src/input/AIInputSource.gd")
+const MODE_SELECT_SCENE := "res://scenes/Main.tscn"
 
 var spawn_timer: float = 0.0
 var elapsed: float = 0.0
@@ -106,7 +107,10 @@ var _net_debug_label: Label = null
 @onready var info_panel: Control = $HUD/InfoPanel
 @onready var weapon_hud_panel: Control = $HUD/WeaponHUD
 @onready var game_over_layer: CanvasLayer = $GameOver
-@onready var game_over_time: Label = $GameOver/TimeSurvived
+@onready var game_over_time: Label = $GameOver/Center/Panel/Margin/VBox/TimeSurvived
+@onready var game_over_title: Label = $GameOver/Center/Panel/Margin/VBox/Label
+@onready var game_over_restart_button: Button = $GameOver/Center/Panel/Margin/VBox/Buttons/RestartButton
+@onready var game_over_lobby_button: Button = $GameOver/Center/Panel/Margin/VBox/Buttons/LobbyButton
 @onready var boost_orbs_root: Node2D = $BoostOrbs
 
 func _ready() -> void:
@@ -132,6 +136,10 @@ func _ready() -> void:
 	_ensure_event_audio_loaded()
 	_maybe_schedule_hud_screenshot()
 	_setup_net_debug_hud()
+	if game_over_restart_button != null and not game_over_restart_button.pressed.is_connected(Callable(self, "_on_game_over_restart_pressed")):
+		game_over_restart_button.pressed.connect(_on_game_over_restart_pressed)
+	if game_over_lobby_button != null and not game_over_lobby_button.pressed.is_connected(Callable(self, "_on_game_over_lobby_pressed")):
+		game_over_lobby_button.pressed.connect(_on_game_over_lobby_pressed)
 
 func _exit_tree() -> void:
 	_cleanup_transient_audio()
@@ -189,6 +197,13 @@ func _layout_hud() -> void:
 func _input(event: InputEvent) -> void:
 	if not input_enabled:
 		return
+	if game_over and event is InputEventKey and event.pressed and not event.echo:
+		var key_event: InputEventKey = event as InputEventKey
+		if key_event.keycode == KEY_ESCAPE:
+			SessionConfig.requeue_on_lobby_entry = false
+			get_tree().change_scene_to_file(_lobby_scene_for_current_mode())
+			get_viewport().set_input_as_handled()
+			return
 	if event.is_action_pressed("toggle_minimap"):
 		_toggle_minimap_visibility()
 		minimap_toggle_was_pressed = true
@@ -206,7 +221,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		var key_event: InputEventKey = event as InputEventKey
 		if key_event.keycode == KEY_ESCAPE:
 			SessionConfig.requeue_on_lobby_entry = false
-			get_tree().change_scene_to_file("res://scenes/Lobby.tscn")
+			get_tree().change_scene_to_file(_lobby_scene_for_current_mode())
 
 func _process(delta: float) -> void:
 	_refresh_local_player()
@@ -682,6 +697,8 @@ func _on_player_died(_victim: Node) -> void:
 		_log_telemetry_summary()
 	if game_over_layer != null:
 		game_over_layer.visible = true
+	if game_over_restart_button != null:
+		game_over_restart_button.grab_focus()
 	_update_game_over_time()
 
 func _on_combatant_died(victim: Node) -> void:
@@ -698,8 +715,9 @@ func _update_game_over_time() -> void:
 	var minutes = (total % 3600) / 60
 	var seconds = total % 60
 	game_over_time.text = "Time Survived: %02d:%02d:%02d" % [hours, minutes, seconds]
-	var pulse = 0.9 + 0.12 * sin(game_over_pulse * 2.0)
-	game_over_time.modulate = Color(1.0, 1.0, 1.0, pulse)
+	game_over_time.modulate = Color(1.0, 1.0, 1.0, 1.0)
+	if game_over_title != null:
+		game_over_title.modulate = Color(1.0, 1.0, 1.0, 1.0)
 
 func _maybe_schedule_hud_screenshot() -> void:
 	var args = OS.get_cmdline_args()
@@ -726,6 +744,16 @@ func _do_hud_screenshot(delay: float, path: String) -> void:
 
 func request_restart() -> void:
 	get_tree().reload_current_scene()
+
+func _on_game_over_restart_pressed() -> void:
+	request_restart()
+
+func _on_game_over_lobby_pressed() -> void:
+	SessionConfig.requeue_on_lobby_entry = false
+	get_tree().change_scene_to_file(_lobby_scene_for_current_mode())
+
+func _lobby_scene_for_current_mode() -> String:
+	return MODE_SELECT_SCENE
 
 func set_game_mode(mode_name: String) -> void:
 	if mode_name == "offline_ai" or mode_name == "mixed" or mode_name == "human_only":
@@ -1148,7 +1176,7 @@ func _return_to_lobby() -> void:
 func _deferred_return_to_lobby() -> void:
 	var timer = get_tree().create_timer(0.35)
 	await timer.timeout
-	get_tree().change_scene_to_file("res://scenes/Lobby.tscn")
+	get_tree().change_scene_to_file(MODE_SELECT_SCENE)
 
 func _configure_dedicated_server_presentation() -> void:
 	input_enabled = false

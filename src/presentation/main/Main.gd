@@ -2,7 +2,6 @@ extends Node2D
 
 const SessionConfig = preload("res://src/infrastructure/network/SessionConfig.gd")
 const WORLD_SCENE := "res://scenes/World.tscn"
-const LOBBY_SCENE := "res://scenes/Lobby.tscn"
 const UI_MODES: PackedStringArray = ["offline_ai", "mixed", "human_only", "training"]
 
 const MODE_SUBTITLES := {
@@ -218,28 +217,15 @@ func _start_with_mode(mode_name: String) -> void:
 	SessionConfig.selected_mode = mode_name
 	if menu_layer != null:
 		menu_layer.visible = false
-	if mode_name == "offline_ai":
-		SessionConfig.configure_offline(mode_name)
-		call_deferred("_deferred_change_scene", WORLD_SCENE)
+	var force_queue_lobby := OS.get_environment("NEON_FORCE_QUEUE_LOBBY") == "1"
+	if force_queue_lobby and (mode_name == "mixed" or mode_name == "human_only"):
+		call_deferred("_deferred_change_scene", "res://scenes/Lobby.tscn")
 		return
-	if _should_launch_world_direct():
-		call_deferred("_deferred_change_scene", WORLD_SCENE)
-		return
-	call_deferred("_deferred_change_scene", LOBBY_SCENE)
+	# Main menu is the only lobby: all playable modes enter World directly.
+	SessionConfig.configure_offline(mode_name)
+	call_deferred("_deferred_change_scene", WORLD_SCENE)
 
 func _deferred_change_scene(scene_path: String) -> void:
 	if scene_path.is_empty():
 		return
 	get_tree().change_scene_to_file(scene_path)
-
-func _should_launch_world_direct() -> bool:
-	var args = OS.get_cmdline_args()
-	if args.has("--server"):
-		return true
-	var env_server = OS.get_environment("NEON_SERVER").to_lower()
-	if env_server == "1" or env_server == "true":
-		return true
-	var env_role = OS.get_environment("NEON_NETWORK_ROLE").to_lower()
-	if env_role == "server":
-		return true
-	return false
