@@ -37,6 +37,7 @@ var _selected_index: int = 0
 var _hover_index: int = -1
 var _launching: bool = false
 var _blink_running: bool = false
+var _crt_time_s: float = 0.0
 
 func _ready() -> void:
 	_apply_session_overrides()
@@ -49,6 +50,21 @@ func _ready() -> void:
 		hit_areas[i].mouse_exited.connect(_on_card_unhovered.bind(i))
 	_selected_index = maxi(UI_MODES.find(SessionConfig.selected_mode), 0)
 	_refresh_menu(true)
+	set_process(true)
+
+func _process(delta: float) -> void:
+	_crt_time_s += delta
+	if _launching or _blink_running:
+		return
+	if _selected_index < 0 or _selected_index >= border_fx.size():
+		return
+	var fx := border_fx[_selected_index]
+	if fx == null:
+		return
+	# CRT-like pulse/flicker on selected card border.
+	var pulse := 0.74 + 0.2 * sin(_crt_time_s * 7.4)
+	var flicker := 0.06 * sin(_crt_time_s * 51.0) + 0.04 * sin(_crt_time_s * 87.0)
+	fx.modulate.a = clampf(pulse + flicker, 0.58, 1.0)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _launching or _blink_running:
@@ -87,6 +103,7 @@ func _on_card_pressed(index: int) -> void:
 		return
 	_selected_index = clampi(index, 0, UI_MODES.size() - 1)
 	_refresh_menu()
+	_confirm_selected_mode()
 
 func _on_card_hovered(index: int) -> void:
 	if _launching or _blink_running:
