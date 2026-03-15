@@ -23,6 +23,7 @@ Architecture (new):
 - Input pipeline: `InputSource -> CommandQueue -> GameWorld.apply(command) -> Events -> Presentation`.
 - Agent boundary: `src/infrastructure/agent/AgentBridge.gd` + `LocalAgentStub.gd` (disabled by default).
 - Network boundary: `src/infrastructure/network/NetworkAdapter.gd` (concrete local + ENet path).
+- Global client UI/audio boundary: `src/presentation/audio/MusicController.gd` (autoload for menu/gameplay BGM + settings popup)
 
 Controls:
 - WASD / arrows: move
@@ -108,6 +109,10 @@ Notes:
   - `critical.wav` and `powerup.wav` live under `assets/audio/ui/`
   - `powerup.wav` is intentionally disabled in gameplay flow for now
   - run `./run_game.sh --headless --import` after moving/adding audio assets to refresh `.import` remaps
+- Background music:
+  - gameplay BGM lives at `assets/audio/bgm/background.mp3`
+  - menu BGM lives at `assets/audio/bgm/menu_background.mp3`
+  - `MusicController` is client-side only, loops tracks, defaults to 50% volume, and exposes a bottom-right gear icon that opens audio controls
 - Multiplayer phased implementation and handoff status are tracked in `TODO.md` (use it as source of truth for pending/complete).
 - `--test-human-mode` current expected HUD state after queueing both clients:
   - same `match`, different `actor`, `conn=1`, `role=client`, `remotes=1`

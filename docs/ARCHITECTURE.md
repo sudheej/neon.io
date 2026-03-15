@@ -20,6 +20,7 @@ Presentation World Loop:
 - `GameWorld` is the authoritative command boundary.
 - Presentation nodes (`World`, `Player`, `WeaponSystem`, UI) remain scene-driven.
 - Infrastructure boundaries (`AgentBridge`, `NetworkAdapter`) are stubs that can be swapped without touching gameplay logic.
+- `MusicController` is the global client-only autoload that persists menu/gameplay BGM and the bottom-right settings popup across scene changes.
 - `World` owns dynamic encounter systems: enemy spawning, surge pacing, telemetry, and boost-orb lifecycle.
 - `BoostOrb` is a presentation-world entity that encapsulates drop type/value, visual state, pickup overlap checks, and consume/invalidate behavior.
 - `NetProtocol` (`src/infrastructure/network/NetProtocol.gd`) defines `net.v1` envelope validation and transport payload normalization.
@@ -27,10 +28,11 @@ Presentation World Loop:
 ## Startup Flow
 - `Main` scene is now a mode-selection entry point:
   - `offline_ai` -> loads `World`.
-  - `mixed` / `human_only` -> loads `Lobby` queue flow.
+  - `mixed` / `human_only` -> currently also load `World` directly from the main menu flow.
+- `Lobby` remains available for explicit queue-driven runs and automated multiplayer test flows.
 - Non-interactive startup bypasses menu for server/headless/env-driven runs.
 
-## Current Multiplayer State (2026-02-16)
+## Current Multiplayer State (2026-03-15)
 - `./run_game.sh --test-human-mode` reaches connected client state:
   - same `match_id`, distinct `actor_id`
   - `conn=1`, `role=client`, `remotes=1`
@@ -158,6 +160,20 @@ Legacy expand commands remain for compatibility (`TOGGLE_EXPAND`, `PLACE_CELL`).
 - Dedicated match director service (registry + heartbeat + allocator) between lobby and match fleet.
 - Reconnect/session recovery window with actor ownership reclaim policy.
 - Camera follow/recenter polish for local death/respawn transitions in online mode.
+
+## Client Audio Architecture
+- `project.godot` registers `MusicController` as an autoload.
+- It is intentionally client-only:
+  - disabled for dedicated server
+  - disabled for headless runs
+  - disabled when `NEON_SERVER=1`
+- Track mapping is scene-aware:
+  - `Main` and other non-gameplay scenes use menu BGM
+  - `World` uses gameplay BGM
+- Audio assets are imported MP3s:
+  - `assets/audio/bgm/menu_background.mp3`
+  - `assets/audio/bgm/background.mp3`
+- The persistent settings affordance is a bottom-right gear icon that opens a compact popup with music volume and mute controls.
 
 ## Boost Orbs
 - Spawn trigger: any combatant death (`Player.died` signal from player or AI instances).

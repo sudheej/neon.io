@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3]
+[gd_scene load_steps=23 format=3]
 
 [ext_resource type="Script" path="res://src/presentation/world/World.gd" id="1"]
 [ext_resource type="Script" path="res://src/presentation/world/BlueprintGrid.gd" id="2"]
@@ -14,6 +14,8 @@
 [ext_resource type="Script" path="res://src/presentation/ui/HudAnnouncement.gd" id="12"]
 [ext_resource type="Script" path="res://src/presentation/world/ArenaBoundary.gd" id="13"]
 [ext_resource type="Script" path="res://src/presentation/ui/MiniMap.gd" id="14"]
+[ext_resource type="PackedScene" path="res://src/presentation/scenes/StarfieldBackdrop.tscn" id="15"]
+[ext_resource type="FontFile" path="res://assets/fonts/OCR-a___.ttf" id="17"]
 
 [sub_resource type="StyleBoxFlat" id="1"]
 content_margin_left = 12.0
@@ -54,9 +56,76 @@ shadow_offset = Vector2(0, 0)
 shadow_color = Color(0.2, 0.95, 1, 0.18)
 
 [sub_resource type="SystemFont" id="3"]
-font_names = PackedStringArray("Electrolize", "DSEG14 Classic", "DSEG7 Classic", "DS-Digital", "Digital-7", "LCD", "DejaVu Sans Mono")
-antialiasing = 0
-subpixel_positioning = 0
+font_names = PackedStringArray("Noto Sans", "Noto Sans Display", "Nimbus Sans Narrow", "DejaVu Sans Condensed", "DejaVu Sans")
+antialiasing = 1
+subpixel_positioning = 1
+
+[sub_resource type="StyleBoxFlat" id="4"]
+content_margin_left = 20.0
+content_margin_top = 18.0
+content_margin_right = 20.0
+content_margin_bottom = 18.0
+bg_color = Color(0.08, 0.14, 0.24, 0.0)
+border_width_left = 0
+border_width_top = 0
+border_width_right = 0
+border_width_bottom = 0
+border_color = Color(0, 0, 0, 0)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+shadow_size = 0
+shadow_offset = Vector2(0, 0)
+shadow_color = Color(0.08, 0.28, 0.5, 0.25)
+
+[sub_resource type="StyleBoxFlat" id="5"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.08, 0.14, 0.24, 0.86)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.26, 0.58, 0.86, 0.85)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[sub_resource type="StyleBoxFlat" id="6"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.11, 0.2, 0.33, 0.92)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.44, 0.74, 0.97, 0.95)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[sub_resource type="StyleBoxFlat" id="7"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.07, 0.12, 0.2, 0.95)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.36, 0.66, 0.92, 0.95)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
 
 [node name="World" type="Node2D"]
 script = ExtResource("1")
@@ -109,49 +178,17 @@ script = ExtResource("11")
 [node name="HUD" type="CanvasLayer" parent="."]
 layer = 10
 
-[node name="InfoPanel" type="PanelContainer" parent="HUD"]
-anchor_left = 1.0
-anchor_top = 0.0
-anchor_right = 1.0
-anchor_bottom = 0.0
-offset_left = -190.0
-offset_top = 10.0
-offset_right = -12.0
-offset_bottom = 72.0
-theme_override_styles/panel = SubResource("1")
-
-[node name="Body" type="VBoxContainer" parent="HUD/InfoPanel"]
-size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_override_constants/separation = 4
-
-[node name="Title" type="Label" parent="HUD/InfoPanel/Body"]
-horizontal_alignment = 2
-text = "SYSTEM STATUS"
-theme_override_colors/font_color = Color(0.6, 0.95, 1, 0.9)
-theme_override_font_sizes/font_size = 10
-
-[node name="Accent" type="ColorRect" parent="HUD/InfoPanel/Body"]
-custom_minimum_size = Vector2(0, 2)
-size_flags_horizontal = 3
-color = Color(0.2, 0.9, 1, 0.7)
-
-[node name="Info" type="Label" parent="HUD/InfoPanel/Body"]
-horizontal_alignment = 2
-text = "CREDITS: 0.0\nENEMIES: 0\n[R] RESTART"
-theme_override_colors/font_color = Color(0.9, 0.96, 1, 0.9)
-theme_override_font_sizes/font_size = 12
-
 [node name="WeaponHUD" type="Control" parent="HUD"]
 anchor_left = 1.0
 anchor_top = 0.0
 anchor_right = 1.0
 anchor_bottom = 0.0
-offset_left = -300.0
-offset_top = 166.0
+offset_left = -298.0
+offset_top = 10.0
 offset_right = -12.0
-offset_bottom = 344.0
+offset_bottom = 252.0
 script = ExtResource("4")
+theme_override_fonts/font = ExtResource("17")
 
 [node name="MiniMap" type="Control" parent="HUD"]
 visible = false
@@ -177,6 +214,7 @@ offset_right = -12.0
 offset_bottom = 162.0
 pivot_offset = Vector2(143, 22)
 theme_override_styles/panel = SubResource("2")
+theme_override_fonts/font = ExtResource("17")
 script = ExtResource("12")
 
 [node name="Margin" type="MarginContainer" parent="HUD/LowHealthBanner"]
@@ -194,7 +232,7 @@ text = "LOW HEALTH"
 theme_override_colors/font_color = Color(0.85, 0.98, 1, 1)
 theme_override_colors/font_outline_color = Color(0.08, 0.22, 0.28, 0.95)
 theme_override_constants/outline_size = 1
-theme_override_fonts/font = SubResource("3")
+theme_override_fonts/font = ExtResource("17")
 theme_override_font_sizes/font_size = 23
 text_overrun_behavior = 3
 
@@ -211,33 +249,109 @@ offset_left = 0.0
 offset_top = 0.0
 offset_right = 0.0
 offset_bottom = 0.0
-color = Color(0, 0, 0, 0.6)
+mouse_filter = 2
+color = Color(0.04, 0.07, 0.13, 0.9)
 
-[node name="Label" type="Label" parent="GameOver"]
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -140.0
-offset_top = -30.0
-offset_right = 140.0
-offset_bottom = 30.0
-horizontal_alignment = 1
-vertical_alignment = 1
-text = "GAME OVER\nPress R to restart"
+[node name="StarfieldBackdrop" parent="GameOver" instance=ExtResource("15")]
 
-[node name="TimeSurvived" type="Label" parent="GameOver"]
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -140.0
-offset_top = 18.0
-offset_right = 140.0
-offset_bottom = 46.0
+[node name="Shade" type="ColorRect" parent="GameOver"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(0.08, 0.14, 0.24, 0.18)
+
+[node name="Center" type="CenterContainer" parent="GameOver"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = 24.0
+offset_right = -24.0
+offset_bottom = -24.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="GameOver/Center"]
+custom_minimum_size = Vector2(980, 420)
+layout_mode = 2
+theme_override_styles/panel = SubResource("4")
+theme_override_fonts/font = ExtResource("17")
+
+[node name="Margin" type="MarginContainer" parent="GameOver/Center/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 14
+
+[node name="VBox" type="VBoxContainer" parent="GameOver/Center/Panel/Margin"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="Label" type="Label" parent="GameOver/Center/Panel/Margin/VBox"]
+layout_mode = 2
 horizontal_alignment = 1
-vertical_alignment = 1
+text = "GAME OVER"
+theme_override_colors/font_color = Color(0.95, 0.99, 1, 1)
+theme_override_fonts/font = ExtResource("17")
+theme_override_font_sizes/font_size = 136
+theme_override_constants/outline_size = 0
+
+[node name="TimeSurvived" type="Label" parent="GameOver/Center/Panel/Margin/VBox"]
+layout_mode = 2
+horizontal_alignment = 1
 text = "Time Survived: 00:00:00"
+theme_override_colors/font_color = Color(0.86, 0.95, 1, 0.96)
+theme_override_fonts/font = ExtResource("17")
+theme_override_font_sizes/font_size = 24
+theme_override_constants/outline_size = 0
+
+[node name="Hint" type="Label" parent="GameOver/Center/Panel/Margin/VBox"]
+visible = false
+layout_mode = 2
+horizontal_alignment = 1
+text = ""
+theme_override_colors/font_color = Color(0.62, 0.84, 0.95, 0.88)
+theme_override_fonts/font = ExtResource("17")
+theme_override_font_sizes/font_size = 13
+theme_override_constants/outline_size = 0
+
+[node name="Spacer" type="Control" parent="GameOver/Center/Panel/Margin/VBox"]
+custom_minimum_size = Vector2(0, 2)
+layout_mode = 2
+
+[node name="Buttons" type="HBoxContainer" parent="GameOver/Center/Panel/Margin/VBox"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 12
+
+[node name="RestartButton" type="Button" parent="GameOver/Center/Panel/Margin/VBox/Buttons"]
+custom_minimum_size = Vector2(190, 46)
+layout_mode = 2
+text = "RESTART MATCH"
+theme_override_styles/normal = SubResource("5")
+theme_override_styles/hover = SubResource("6")
+theme_override_styles/pressed = SubResource("7")
+theme_override_styles/focus = SubResource("6")
+theme_override_colors/font_color = Color(0.88, 0.97, 1, 1)
+theme_override_fonts/font = ExtResource("17")
+theme_override_font_sizes/font_size = 16
+theme_override_constants/outline_size = 0
+
+[node name="LobbyButton" type="Button" parent="GameOver/Center/Panel/Margin/VBox/Buttons"]
+custom_minimum_size = Vector2(190, 46)
+layout_mode = 2
+text = "RETURN TO LOBBY"
+theme_override_styles/normal = SubResource("5")
+theme_override_styles/hover = SubResource("6")
+theme_override_styles/pressed = SubResource("7")
+theme_override_styles/focus = SubResource("6")
+theme_override_colors/font_color = Color(0.88, 0.97, 1, 1)
+theme_override_fonts/font = ExtResource("17")
+theme_override_font_sizes/font_size = 16
+theme_override_constants/outline_size = 0
 
 [node name="Enemies" type="Node2D" parent="."]
 

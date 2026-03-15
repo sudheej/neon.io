@@ -53,6 +53,7 @@ const MESSAGE_SFX_PATH: String = "res://assets/audio/ui/message.wav"
 const HUD_REF_RESOLUTION := Vector2(1920.0, 1080.0)
 const PlayerScene = preload("res://src/presentation/scenes/Player.tscn")
 const AIControllerScript = preload("res://src/input/AIInputSource.gd")
+const MODE_SELECT_SCENE := "res://scenes/Main.tscn"
 
 var spawn_timer: float = 0.0
 var elapsed: float = 0.0
@@ -69,6 +70,7 @@ var general_announcement_timer: float = 0.0
 var pending_general_text: String = ""
 var pending_general_sfx: AudioStream = null
 var pending_general_volume_db: float = -4.0
+var game_paused: bool = false
 var leaderboard_timer: float = 0.0
 var player_is_leader: bool = false
 var leaderboard_contest_unlocked: bool = false
@@ -81,6 +83,7 @@ var event_audio_loaded: bool = false
 var minimap_toggle_was_pressed: bool = false
 var minimap_visible_target: bool = true
 var mute_toggle_was_pressed: bool = false
+var pause_toggle_was_pressed: bool = false
 var audio_muted: bool = false
 var game_mode: String = "offline_ai"
 var dedicated_server: bool = false
@@ -100,16 +103,18 @@ var _net_debug_label: Label = null
 @onready var player = $Player
 @onready var enemies_root = $Enemies
 @onready var camera = $Camera2D
-@onready var hud_label: Label = $HUD/InfoPanel/Body/Info
 @onready var low_health_banner = $HUD/LowHealthBanner
 @onready var mini_map: Control = $HUD/MiniMap
-@onready var info_panel: Control = $HUD/InfoPanel
 @onready var weapon_hud_panel: Control = $HUD/WeaponHUD
 @onready var game_over_layer: CanvasLayer = $GameOver
-@onready var game_over_time: Label = $GameOver/TimeSurvived
+@onready var game_over_time: Label = $GameOver/Center/Panel/Margin/VBox/TimeSurvived
+@onready var game_over_title: Label = $GameOver/Center/Panel/Margin/VBox/Label
+@onready var game_over_restart_button: Button = $GameOver/Center/Panel/Margin/VBox/Buttons/RestartButton
+@onready var game_over_lobby_button: Button = $GameOver/Center/Panel/Margin/VBox/Buttons/LobbyButton
 @onready var boost_orbs_root: Node2D = $BoostOrbs
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_apply_runtime_mode()
 	_apply_local_actor_binding()
 	_bind_network_adapter()
@@ -126,12 +131,18 @@ func _ready() -> void:
 	_bind_hud_targets()
 	get_viewport().size_changed.connect(_layout_hud)
 	_layout_hud()
+	if low_health_banner != null:
+		low_health_banner.process_mode = Node.PROCESS_MODE_ALWAYS
 	if mini_map != null:
 		minimap_visible_target = mini_map.visible
 	audio_muted = _is_master_bus_muted()
 	_ensure_event_audio_loaded()
 	_maybe_schedule_hud_screenshot()
 	_setup_net_debug_hud()
+	if game_over_restart_button != null and not game_over_restart_button.pressed.is_connected(Callable(self, "_on_game_over_restart_pressed")):
+		game_over_restart_button.pressed.connect(_on_game_over_restart_pressed)
+	if game_over_lobby_button != null and not game_over_lobby_button.pressed.is_connected(Callable(self, "_on_game_over_lobby_pressed")):
+		game_over_lobby_button.pressed.connect(_on_game_over_lobby_pressed)
 
 func _exit_tree() -> void:
 	_cleanup_transient_audio()
@@ -158,16 +169,10 @@ func _layout_hud() -> void:
 	var margin := 12.0 * scale
 	var panel_gap := 8.0 * scale
 
-	if info_panel != null:
-		info_panel.offset_left = -190.0 * scale
-		info_panel.offset_top = 10.0 * scale
-		info_panel.offset_right = -margin
-		info_panel.offset_bottom = info_panel.offset_top + 62.0 * scale
-
 	if weapon_hud_panel != null:
-		var hud_top := (10.0 + 62.0 + 44.0) * scale + panel_gap * 2.0
-		var hud_height := 196.0 * scale
-		weapon_hud_panel.offset_left = -304.0 * scale
+		var hud_top := 10.0 * scale
+		var hud_height := 242.0 * scale
+		weapon_hud_panel.offset_left = -298.0 * scale
 		weapon_hud_panel.offset_top = hud_top
 		weapon_hud_panel.offset_right = -margin
 		weapon_hud_panel.offset_bottom = hud_top + hud_height
@@ -189,6 +194,15 @@ func _layout_hud() -> void:
 func _input(event: InputEvent) -> void:
 	if not input_enabled:
 		return
+	if _handle_pause_input(event):
+		return
+	if game_over and event is InputEventKey and event.pressed and not event.echo:
+		var key_event: InputEventKey = event as InputEventKey
+		if key_event.keycode == KEY_ESCAPE:
+			SessionConfig.requeue_on_lobby_entry = false
+			get_tree().change_scene_to_file(_lobby_scene_for_current_mode())
+			get_viewport().set_input_as_handled()
+			return
 	if event.is_action_pressed("toggle_minimap"):
 		_toggle_minimap_visibility()
 		minimap_toggle_was_pressed = true
@@ -200,19 +214,26 @@ func _input(event: InputEvent) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not input_enabled:
 		return
+	if _handle_pause_input(event):
+		return
+	if game_paused:
+		return
 	if event.is_action_pressed("restart_game"):
 		get_tree().reload_current_scene()
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key_event: InputEventKey = event as InputEventKey
 		if key_event.keycode == KEY_ESCAPE:
 			SessionConfig.requeue_on_lobby_entry = false
-			get_tree().change_scene_to_file("res://scenes/Lobby.tscn")
+			get_tree().change_scene_to_file(_lobby_scene_for_current_mode())
 
 func _process(delta: float) -> void:
 	_refresh_local_player()
 	_smooth_network_actor_positions(delta)
 	_poll_minimap_toggle()
 	_poll_mute_toggle()
+	_poll_pause_toggle()
+	if game_paused:
+		return
 	if game_over:
 		game_over_pulse = fmod(game_over_pulse + delta, TAU)
 		_update_game_over_time()
@@ -384,6 +405,15 @@ func _poll_mute_toggle() -> void:
 	if pressed and not mute_toggle_was_pressed:
 		_toggle_mute()
 	mute_toggle_was_pressed = pressed
+
+func _poll_pause_toggle() -> void:
+	if not _can_toggle_pause():
+		pause_toggle_was_pressed = false
+		return
+	var pressed = Input.is_action_pressed("toggle_pause") or Input.is_key_pressed(KEY_P)
+	if pressed and not pause_toggle_was_pressed:
+		_toggle_pause()
+	pause_toggle_was_pressed = pressed
 
 func _toggle_minimap_visibility() -> void:
 	if mini_map == null:
@@ -616,15 +646,9 @@ func _maybe_spawn_enemy(delta: float, enemy_count: int) -> void:
 		return
 	_spawn_enemy()
 
-func _update_hud(combatants: Array[Node]) -> void:
-	if hud_label == null:
-		return
+func _update_hud(_combatants: Array[Node]) -> void:
 	if local_player == null or not is_instance_valid(local_player):
 		return
-	if local_player.get("xp") == null:
-		return
-	var enemy_count = max(combatants.size() - 1, 0)
-	hud_label.text = "CREDITS: %.1f\nENEMIES: %d\n[M] MUTE  [R] RESTART" % [local_player.xp, enemy_count]
 	_update_net_debug_hud()
 
 func _toggle_mute() -> void:
@@ -637,6 +661,41 @@ func _toggle_mute() -> void:
 		_show_general_announcement("AUDIO MUTED", null, 0.0)
 	else:
 		_show_general_announcement("AUDIO ON", null, 0.0)
+
+func _handle_pause_input(event: InputEvent) -> bool:
+	if not (event is InputEventKey):
+		return false
+	var key_event := event as InputEventKey
+	if not key_event.pressed or key_event.echo:
+		return false
+	var is_pause_key := key_event.keycode == KEY_P or key_event.physical_keycode == KEY_P
+	if not is_pause_key or not _can_toggle_pause():
+		return false
+	_toggle_pause()
+	get_viewport().set_input_as_handled()
+	return true
+
+func _can_toggle_pause() -> bool:
+	if dedicated_server:
+		return false
+	if _is_online_mode():
+		return false
+	if game_over:
+		return false
+	return game_mode == "offline_ai"
+
+func _toggle_pause() -> void:
+	game_paused = not game_paused
+	get_tree().paused = game_paused
+	if low_health_banner == null:
+		return
+	if game_paused:
+		low_health_banner.show_announcement("GAME PAUSED")
+		return
+	if low_health_alert_active:
+		low_health_banner.show_announcement("LOW HEALTH")
+	else:
+		low_health_banner.hide_announcement()
 
 func _is_master_bus_muted() -> bool:
 	var master_bus := AudioServer.get_bus_index("Master")
@@ -682,6 +741,8 @@ func _on_player_died(_victim: Node) -> void:
 		_log_telemetry_summary()
 	if game_over_layer != null:
 		game_over_layer.visible = true
+	if game_over_restart_button != null:
+		game_over_restart_button.grab_focus()
 	_update_game_over_time()
 
 func _on_combatant_died(victim: Node) -> void:
@@ -698,8 +759,9 @@ func _update_game_over_time() -> void:
 	var minutes = (total % 3600) / 60
 	var seconds = total % 60
 	game_over_time.text = "Time Survived: %02d:%02d:%02d" % [hours, minutes, seconds]
-	var pulse = 0.9 + 0.12 * sin(game_over_pulse * 2.0)
-	game_over_time.modulate = Color(1.0, 1.0, 1.0, pulse)
+	game_over_time.modulate = Color(1.0, 1.0, 1.0, 1.0)
+	if game_over_title != null:
+		game_over_title.modulate = Color(1.0, 1.0, 1.0, 1.0)
 
 func _maybe_schedule_hud_screenshot() -> void:
 	var args = OS.get_cmdline_args()
@@ -726,6 +788,16 @@ func _do_hud_screenshot(delay: float, path: String) -> void:
 
 func request_restart() -> void:
 	get_tree().reload_current_scene()
+
+func _on_game_over_restart_pressed() -> void:
+	request_restart()
+
+func _on_game_over_lobby_pressed() -> void:
+	SessionConfig.requeue_on_lobby_entry = false
+	get_tree().change_scene_to_file(_lobby_scene_for_current_mode())
+
+func _lobby_scene_for_current_mode() -> String:
+	return MODE_SELECT_SCENE
 
 func set_game_mode(mode_name: String) -> void:
 	if mode_name == "offline_ai" or mode_name == "mixed" or mode_name == "human_only":
@@ -1148,7 +1220,7 @@ func _return_to_lobby() -> void:
 func _deferred_return_to_lobby() -> void:
 	var timer = get_tree().create_timer(0.35)
 	await timer.timeout
-	get_tree().change_scene_to_file("res://scenes/Lobby.tscn")
+	get_tree().change_scene_to_file(MODE_SELECT_SCENE)
 
 func _configure_dedicated_server_presentation() -> void:
 	input_enabled = false

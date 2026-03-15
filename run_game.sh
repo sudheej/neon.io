@@ -172,6 +172,8 @@ launch_human_mode_clients() {
     nohup env \
       NEON_MODE=human_only \
       NEON_AUTO_START=1 \
+      NEON_AUTO_QUEUE=1 \
+      NEON_FORCE_QUEUE_LOBBY=1 \
       NEON_LOBBY_URL="$LOBBY_URL" \
       NEON_PLAYTEST_KEY="$PLAYTEST_KEY_OVERRIDE" \
       NEON_NET_DEBUG_HUD=1 \
@@ -204,6 +206,8 @@ launch_mixed_mode_clients() {
     nohup env \
       NEON_MODE=mixed \
       NEON_AUTO_START=1 \
+      NEON_AUTO_QUEUE=1 \
+      NEON_FORCE_QUEUE_LOBBY=1 \
       NEON_LOBBY_URL="$LOBBY_URL" \
       NEON_PLAYTEST_KEY="$PLAYTEST_KEY_OVERRIDE" \
       NEON_NET_DEBUG_HUD=1 \
