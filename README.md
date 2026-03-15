@@ -17,6 +17,7 @@ World (presentation root)
 |-- Enemies (container)
 |-- BoostOrbs (drop container)
 |-- HUD / GameOver (UI)
+|-- MusicController (autoload, client-only BGM + settings popup)
 |-- GameWorld (domain boundary)
     |-- CommandQueue
     |-- HumanInputSource
@@ -48,6 +49,7 @@ World (presentation root)
     network/         # Network adapter boundary
   presentation
     scenes/          # Main/World/Player/Enemy scenes
+    audio/           # MusicController autoload
     world/           # World scripts
     player/          # Player + shape
     weapons/         # WeaponSystem + projectiles
@@ -66,9 +68,10 @@ World (presentation root)
 ```
 Startup now opens a mode selector in `Main`:
 - `offline_ai`: starts local world immediately.
-- `mixed` / `human_only`: opens lobby queue flow.
+- `mixed` / `human_only`: currently also enter `World` directly from the main menu flow.
+- queue/lobby flow is still available when explicitly forced (`NEON_FORCE_QUEUE_LOBBY=1`) or through the dedicated test orchestration paths.
 
-For `mixed` / `human_only`, start the lobby service first:
+If you want to exercise queue/lobby flow manually, start the lobby service first:
 ```bash
 cd backend/lobby-service
 python3 app.py
@@ -196,6 +199,10 @@ Current command types:
 - Global weapon selection: all cells fire the currently selected weapon.
 - Homing missiles are capped per player (up to one active missile per cell).
 - Camera follows the active cell with smoothing.
+- Background music is client-side and scene-aware:
+  - menu track: `assets/audio/bgm/menu_background.mp3`
+  - gameplay track: `assets/audio/bgm/background.mp3`
+  - `src/presentation/audio/MusicController.gd` swaps/loops tracks and exposes a bottom-right gear button that opens audio controls
 - Boost orbs spawn on any combatant death:
   - types: XP, weapon-specific ammo, health
   - ammo orb colors match weapon colors (laser cyan, stun green, homing orange, spread purple)
@@ -244,7 +251,7 @@ This will feed periodic `MOVE` commands to the player via the AgentBridge.
 - Scripts use `class_name` for core types (e.g., `Player`, `WeaponSystem`).
 - Domain resources live under `src/domain` and avoid direct Node dependencies when possible.
 - Signals are verbs in past tense (`died`, `command_applied`) or intent (`state_emitted`).
-- Autoloads are avoided unless truly global; current design is scene-contained.
+- Autoloads are avoided unless they need to persist across scene changes. `MusicController` is the current intentional exception.
 
 ## Networking Readiness
 Ready now:

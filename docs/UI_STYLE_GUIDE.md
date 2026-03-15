@@ -47,6 +47,8 @@ Particle backdrop (squares):
 - Borders: bright enough to define hierarchy, never pure white.
 - Labels: cool off-white/cyan; selected states increase alpha, not saturation spikes.
 - Selected mode emphasis: scale + border alpha increase; keep timing short (`~0.13s`).
+- Utility controls: prefer compact, intentional affordances over inline HUD clutter.
+- Global settings affordance: bottom-right floating gear icon with no heavy border treatment; clicking opens a compact translucent popup for audio controls.
 
 ## Screen Consistency Notes
 
@@ -61,6 +63,7 @@ Particle backdrop (squares):
 - `src/presentation/main/StarfieldBackdrop.gd`
 - `src/presentation/scenes/Lobby.tscn`
 - `src/presentation/lobby/Lobby.gd`
+- `src/presentation/audio/MusicController.gd`
 - `src/presentation/world/BlueprintGrid.gd`
 - `src/presentation/scenes/World.tscn`
 
