@@ -1,0 +1,55 @@
+name: Build and Test
+
+on:
+  pull_request:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    container: ghcr.io/barichello/godot-ci:4.5.1
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test lobby service
+        run: python3 -m unittest discover -s backend/lobby-service -p 'test_*.py'
+      - name: Import project
+        run: godot --headless --path . --import --quit
+      - name: Validate network protocol
+        run: godot --headless --path . --script res://scripts/tests/network_protocol_validator.gd
+      - name: Validate authority guard
+        run: godot --headless --path . --script res://scripts/tests/authority_guard_smoke.gd
+      - name: Validate match authentication
+        run: godot --headless --path . --script res://scripts/tests/match_auth_smoke.gd
+      - name: Validate world replication
+        run: godot --headless --path . --script res://scripts/tests/world_replication_smoke.gd
+      - name: Validate input toggles
+        run: godot --headless --path . --script res://scripts/tests/input_toggle_smoke.gd
+      - name: Validate ENet transport
+        run: godot --headless --path . --script res://scripts/tests/enet_single_process_smoke.gd
+      - name: Validate external-process ENet replication and reconnects
+        env:
+          GODOT_BIN: godot
+          NEON_SOAK_ITERATIONS: "3"
+        run: bash scripts/tests/run_enet_external_process_soak.sh
+      - name: Export Linux release
+        run: |
+          mkdir -p build/ci
+          godot --headless --path . --export-release "Linux/X11" build/ci/neon_client.x86_64
+          test -s build/ci/neon_client.x86_64
+      - name: Export Windows release
+        run: |
+          godot --headless --path . --export-release "Windows Desktop" build/ci/neon_client.exe
+          test -s build/ci/neon_client.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: neon-linux-${{ github.sha }}
+          path: |
+            build/ci/neon_client.x86_64
+            build/ci/neon_client.exe
+          if-no-files-found: error
+          retention-days: 7

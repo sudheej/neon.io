@@ -113,12 +113,12 @@ Playtest client export (Linux + Windows):
 
 Current `--test-human-mode` status:
 - connected clients now show `conn=1`, `remotes=1` with synchronized movement/actions.
-- minor known issue: camera follow/recenter around local death/respawn still needs polish.
+- camera follow/recenter is rebound and regression-tested across local death/respawn.
 
 Current `--test-mixed-mode` status:
 - connected clients now show `conn=1`, `remotes=1` with synchronized movement/actions.
 - mixed test launcher defaults queue start threshold to 2, so both test clients are assigned into the same mixed match with distinct actor ids.
-- minor known issue: camera follow/recenter around local death/respawn still needs polish.
+- camera follow/recenter is rebound and regression-tested across local death/respawn.
 
 Recent multiplayer stability fixes:
 - respawn replication ordering fixed (`actors_remove` before `actors_upsert`) with robust local actor re-create handling.
@@ -283,11 +283,17 @@ Validate protocol examples:
 Validate ENet adapter path:
 ```bash
 ./scripts/tests/run_enet_smoke.sh
+./scripts/tests/run_enet_external_process_soak.sh
 ```
 
-ENet smoke caveat:
-- In this sandbox, Godot may crash before ENet smoke script runtime.
-- Validate ENet smoke on a normal host runtime before concluding ENet path health.
+The external-process soak starts fresh server and client processes for three
+sessions by default, verifies authenticated command/snapshot/delta/ack traffic,
+and checks the occupied-port failure path. Set `NEON_SOAK_ITERATIONS` for a
+longer run.
+
+The single-process test is a fast protocol check. The external-process soak is
+the release gate for real socket lifecycle, authentication, replication ordering,
+acknowledgements, reconnects, and occupied-port handling.
 
 Deferred for later:
 - Match director service and server allocation orchestration.

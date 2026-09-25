@@ -8,7 +8,7 @@ Every message must include:
 - `protocol_version` (string, currently `net.v1`)
 - `session_id` (string)
 - `player_id` (string)
-- `timestamp_ms` (int)
+- `timestamp_ms` (int, Unix epoch milliseconds; never process-relative uptime)
 - `seq` (int, monotonically increasing per sender)
 - `payload` (object)
 
@@ -37,6 +37,22 @@ If `protocol_version` does not match exactly, receivers reject the message with 
   - `state_snapshot` sent periodically and on desync/late-join.
   - clients send `state_ack` with latest snapshot tick.
   - clients may send `resync_request` when delta stream gaps exceed threshold.
+
+## Match Authentication and Identity Binding
+
+The lobby issues a short-lived `match_token` as `base64url(claims).base64url(HMAC-SHA256)`.
+Claims bind `match_id`, `session_id`, `player_id`, `actor_id`, and `expires_at_ms`. The
+lobby's `MATCH_TOKEN_SECRET` and the dedicated server's `NEON_MATCH_TOKEN_SECRET` must
+contain the same high-entropy secret; the secret is never sent to clients. Dedicated
+servers also set `NEON_MATCH_ID` and fail closed when no verification secret is present.
+
+After ENet connects, the client sends reliable `match_join` with its signed token and
+actor ID. Until the server replies with an accepted `match_join_ack`, the connection is
+not application-ready. The server verifies the signature, expiry, match, envelope
+session/player, and actor, then binds the ENet peer ID to that identity. Later messages
+with a substituted session, player, or command actor are rejected and disconnected.
+Snapshots and events are sent only to authenticated peers. Disconnect removes the peer
+binding, acknowledgement state, replay sequence, rate-limit state, and actor ownership.
 
 ## Payload Conventions
 - `Vector2` and `Vector2i` must be encoded as objects:

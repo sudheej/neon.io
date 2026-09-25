@@ -13,18 +13,25 @@ Endpoints:
 from __future__ import annotations
 
 import json
+import hmac
+import hashlib
+import base64
 import os
+import secrets
 import threading
 import time
+import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Deque, Dict, List, Tuple
+from urllib.parse import parse_qs, urlsplit
 
 HOST = os.environ.get("LOBBY_HOST", "127.0.0.1")
 PORT = int(os.environ.get("LOBBY_PORT", "8080"))
 ACTIVE_MATCH_CAP = int(os.environ.get("ACTIVE_MATCH_CAP", "10"))
+MAX_ACTIVE_MATCHES = int(os.environ.get("MAX_ACTIVE_MATCHES", "1"))
 MIN_PLAYERS_TO_START = int(os.environ.get("MIN_PLAYERS_TO_START", "1"))
 MIN_PLAYERS_TO_START_MIXED = int(os.environ.get("MIN_PLAYERS_TO_START_MIXED", str(MIN_PLAYERS_TO_START)))
 MIN_PLAYERS_TO_START_HUMAN_ONLY = int(
@@ -32,6 +39,7 @@ MIN_PLAYERS_TO_START_HUMAN_ONLY = int(
 )
 MATCH_ENDPOINT = os.environ.get("MATCH_ENDPOINT", "127.0.0.1:7000")
 ASSIGNMENT_TTL_MS = int(os.environ.get("ASSIGNMENT_TTL_MS", "20000"))
+MATCH_TOKEN_TTL_MS = int(os.environ.get("MATCH_TOKEN_TTL_MS", "14400000"))
 QUEUE_JOIN_COOLDOWN_MS = int(os.environ.get("QUEUE_JOIN_COOLDOWN_MS", "1200"))
 PLAYTEST_KEY = os.environ.get("PLAYTEST_KEY", "")
 TRUST_PROXY_HEADERS = os.environ.get("TRUST_PROXY_HEADERS", "0") == "1"
@@ -43,6 +51,11 @@ RATE_LIMIT_QUEUE_STATUS = int(os.environ.get("RATE_LIMIT_QUEUE_STATUS", "60"))
 RATE_LIMIT_QUEUE_LEAVE = int(os.environ.get("RATE_LIMIT_QUEUE_LEAVE", "20"))
 RATE_LIMIT_MAX_TRACKED_KEYS = int(os.environ.get("RATE_LIMIT_MAX_TRACKED_KEYS", "5000"))
 RATE_LIMIT_PRUNE_INTERVAL_MS = int(os.environ.get("RATE_LIMIT_PRUNE_INTERVAL_MS", "30000"))
+MAX_REQUEST_BODY_BYTES = int(os.environ.get("MAX_REQUEST_BODY_BYTES", "16384"))
+MAX_IDENTIFIER_LENGTH = int(os.environ.get("MAX_IDENTIFIER_LENGTH", "128"))
+MAX_TRACKED_SESSIONS = int(os.environ.get("MAX_TRACKED_SESSIONS", "10000"))
+MATCH_TOKEN_SECRET = os.environ.get("MATCH_TOKEN_SECRET", "")
+MATCH_ID_SUFFIX = os.environ.get("MATCH_ID_SUFFIX", "")
 
 
 @dataclass
@@ -55,6 +68,8 @@ class PendingAssignment:
     actor_id: str
     created_ms: int
     expires_ms: int
+    token_expires_ms: int
+    accepted: bool = False
 
 
 @dataclass
@@ -79,11 +94,32 @@ def _timestamp_ms() -> int:
     return int(time.time() * 1000)
 
 
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _issue_match_token(session_id: str, player_id: str, match_id: str, actor_id: str, expires_ms: int) -> str:
+    if not MATCH_TOKEN_SECRET:
+        raise RuntimeError("MATCH_TOKEN_SECRET must be configured before allocating matches")
+    claims = json.dumps({
+        "session_id": session_id,
+        "player_id": player_id,
+        "match_id": match_id,
+        "actor_id": actor_id,
+        "expires_at_ms": expires_ms,
+    }, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    encoded = _b64url(claims)
+    signature = hmac.new(MATCH_TOKEN_SECRET.encode("utf-8"), encoded.encode("ascii"), hashlib.sha256).digest()
+    return f"{encoded}.{_b64url(signature)}"
+
+
 def _json(handler: BaseHTTPRequestHandler, code: int, payload: dict) -> None:
     body = json.dumps(payload).encode("utf-8")
     handler.send_response(code)
     handler.send_header("Content-Type", "application/json")
     handler.send_header("Content-Length", str(len(body)))
+    handler.send_header("Cache-Control", "no-store")
+    handler.send_header("X-Content-Type-Options", "nosniff")
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -103,7 +139,7 @@ def _is_playtest_key_valid(handler: BaseHTTPRequestHandler) -> bool:
     if not PLAYTEST_KEY:
         return True
     provided_key = handler.headers.get("X-Playtest-Key", "")
-    return provided_key == PLAYTEST_KEY
+    return hmac.compare_digest(provided_key, PLAYTEST_KEY)
 
 
 def _rate_limit_max_for_path(path: str) -> int:
@@ -155,15 +191,27 @@ def _check_rate_limit(ip: str, path: str) -> int:
     return 0
 
 
-def _read_json(handler: BaseHTTPRequestHandler) -> dict:
-    length = int(handler.headers.get("Content-Length", "0"))
+def _read_json(handler: BaseHTTPRequestHandler) -> tuple[dict | None, str | None]:
+    try:
+        length = int(handler.headers.get("Content-Length", "0"))
+    except (TypeError, ValueError):
+        return None, "invalid_content_length"
     if length <= 0:
-        return {}
+        return {}, None
+    if length > max(MAX_REQUEST_BODY_BYTES, 1):
+        return None, "request_body_too_large"
     data = handler.rfile.read(length)
     try:
-        return json.loads(data.decode("utf-8"))
-    except json.JSONDecodeError:
-        return {}
+        payload = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None, "invalid_json"
+    if not isinstance(payload, dict):
+        return None, "json_object_required"
+    return payload, None
+
+
+def _valid_identifier(value: object) -> bool:
+    return isinstance(value, str) and 0 < len(value) <= max(MAX_IDENTIFIER_LENGTH, 1)
 
 
 def _require_mode(mode: str) -> bool:
@@ -174,34 +222,51 @@ def _allocate_match(mode: str) -> dict | None:
     state = QUEUES[mode]
     if not state.waiting:
         return None
-    min_players_to_start = _min_players_to_start_for_mode(mode)
-    if len(state.waiting) < min_players_to_start:
+    cap = max(ACTIVE_MATCH_CAP, 1)
+    match_id = ""
+    players: List[str] | None = None
+    for active_match_id, active_players in state.active_matches.items():
+        if len(active_players) < cap:
+            match_id = active_match_id
+            players = active_players
+            break
+    if players is None:
+        if len(state.active_matches) >= max(MAX_ACTIVE_MATCHES, 1):
+            return None
+        if len(state.waiting) < _min_players_to_start_for_mode(mode):
+            return None
+        match_id = f"{mode}_{MATCH_ID_SUFFIX}" if MATCH_ID_SUFFIX else f"{mode}_{uuid.uuid4().hex}"
+        players = []
+        state.active_matches[match_id] = players
+    starting_index = len(players)
+    assigned_players: List[str] = []
+    while state.waiting and len(players) < cap:
+        session_id = state.waiting.popleft()
+        players.append(session_id)
+        assigned_players.append(session_id)
+    if not assigned_players:
         return None
-    match_id = f"{mode}_{int(time.time())}_{len(state.active_matches) + 1}"
-    players: List[str] = []
-    while state.waiting and len(players) < ACTIVE_MATCH_CAP:
-        players.append(state.waiting.popleft())
-    if not players:
-        return None
-    state.active_matches[match_id] = players
     now_ms = _timestamp_ms()
     expires_ms = now_ms + max(ASSIGNMENT_TTL_MS, 1000)
-    for idx, session_id in enumerate(players):
+    token_expires_ms = now_ms + max(MATCH_TOKEN_TTL_MS, 1000)
+    for idx, session_id in enumerate(assigned_players, start=starting_index):
         session_suffix = session_id[-8:] if len(session_id) > 8 else session_id
+        actor_id = f"{mode}_{session_suffix}_{idx + 1}"
         state.pending_assignments[session_id] = PendingAssignment(
             session_id=session_id,
             mode=mode,
             match_id=match_id,
             endpoint=MATCH_ENDPOINT,
-            match_token=f"token_{session_id}",
-            actor_id=f"{mode}_{session_suffix}_{idx + 1}",
+            match_token=_issue_match_token(session_id, SESSIONS.get(session_id, session_id), match_id, actor_id, token_expires_ms),
+            actor_id=actor_id,
             created_ms=now_ms,
             expires_ms=expires_ms,
+            token_expires_ms=token_expires_ms,
         )
     return {
         "match_id": match_id,
         "endpoint": MATCH_ENDPOINT,
-        "players": players,
+        "players": assigned_players,
     }
 
 
@@ -240,7 +305,7 @@ def _build_assignment_payload(pending: PendingAssignment) -> dict:
         "match_token": pending.match_token,
         "actor_id": pending.actor_id,
         "timestamp_ms": _timestamp_ms(),
-        "expires_at_ms": pending.expires_ms,
+        "expires_at_ms": pending.token_expires_ms,
     }
 
 
@@ -249,14 +314,28 @@ def _expire_assignments(mode: str) -> None:
     now_ms = _timestamp_ms()
     expired_sessions: List[str] = []
     for session_id, pending in state.pending_assignments.items():
-        if pending.expires_ms <= now_ms:
+        expiry_ms = pending.token_expires_ms if pending.accepted else pending.expires_ms
+        if expiry_ms <= now_ms:
             expired_sessions.append(session_id)
     for session_id in expired_sessions:
         pending = state.pending_assignments.pop(session_id, None)
         if not pending:
             continue
-        if session_id not in state.waiting:
-            state.waiting.append(session_id)
+        _remove_player_from_match(state, pending.match_id, session_id)
+        # An assignment that was never acknowledged by a fresh queue request is
+        # abandoned. Re-enqueueing it creates ghost players after clients have
+        # entered a match, died, or disconnected with no lobby process polling.
+
+
+def _remove_player_from_match(state: QueueState, match_id: str, session_id: str) -> None:
+    players = state.active_matches.get(match_id)
+    if players is None:
+        return
+    remaining = [player for player in players if player != session_id]
+    if remaining:
+        state.active_matches[match_id] = remaining
+    else:
+        state.active_matches.pop(match_id, None)
 
 
 class LobbyHandler(BaseHTTPRequestHandler):
@@ -266,7 +345,8 @@ class LobbyHandler(BaseHTTPRequestHandler):
         return
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path == "/healthz":
+        parsed_url = urlsplit(self.path)
+        if parsed_url.path == "/healthz":
             _json(self, HTTPStatus.OK, {"ok": True, "time_ms": _timestamp_ms()})
             return
         if not _is_playtest_key_valid(self):
@@ -282,15 +362,20 @@ class LobbyHandler(BaseHTTPRequestHandler):
             )
             return
 
-        if self.path.startswith("/v1/queue/status"):
-            query = self.path.split("?", 1)[1] if "?" in self.path else ""
-            params = dict(item.split("=", 1) for item in query.split("&") if "=" in item)
-            session_id = params.get("session_id", "")
-            mode = params.get("mode", "mixed")
+        if parsed_url.path == "/v1/queue/status":
+            params = parse_qs(parsed_url.query, keep_blank_values=True)
+            session_id = params.get("session_id", [""])[0]
+            mode = params.get("mode", ["mixed"])[0]
+            if not _valid_identifier(session_id):
+                _json(self, HTTPStatus.BAD_REQUEST, {"error": "invalid_session_id"})
+                return
             if not _require_mode(mode):
                 _json(self, HTTPStatus.BAD_REQUEST, {"error": "invalid_mode"})
                 return
             with LOCK:
+                if session_id not in SESSIONS:
+                    _json(self, HTTPStatus.UNAUTHORIZED, {"error": "unknown_session"})
+                    return
                 state = QUEUES[mode]
                 _expire_assignments(mode)
                 pending = state.pending_assignments.get(session_id)
@@ -332,7 +417,12 @@ class LobbyHandler(BaseHTTPRequestHandler):
                 {"error": "rate_limited", "retry_in_ms": retry_ms, "timestamp_ms": _timestamp_ms()},
             )
             return
-        payload = _read_json(self)
+        payload, read_error = _read_json(self)
+        if read_error is not None:
+            status = HTTPStatus.REQUEST_ENTITY_TOO_LARGE if read_error == "request_body_too_large" else HTTPStatus.BAD_REQUEST
+            _json(self, status, {"error": read_error})
+            return
+        assert payload is not None
 
         if self.path == "/v1/hello":
             _json(
@@ -349,10 +439,15 @@ class LobbyHandler(BaseHTTPRequestHandler):
         if self.path == "/v1/auth":
             session_id = str(payload.get("session_id", ""))
             player_id = str(payload.get("player_id", ""))
-            if not session_id or not player_id:
-                _json(self, HTTPStatus.BAD_REQUEST, {"error": "missing_session_or_player"})
+            if not _valid_identifier(session_id) or not _valid_identifier(player_id):
+                _json(self, HTTPStatus.BAD_REQUEST, {"error": "invalid_session_or_player"})
                 return
             with LOCK:
+                if session_id not in SESSIONS and len(SESSIONS) >= max(MAX_TRACKED_SESSIONS, 1):
+                    # The service is intentionally in-memory. Bound attacker-controlled
+                    # session cardinality instead of allowing indefinite process growth.
+                    oldest_session = next(iter(SESSIONS))
+                    SESSIONS.pop(oldest_session, None)
                 SESSIONS[session_id] = player_id
             _json(self, HTTPStatus.OK, {"ok": True, "timestamp_ms": _timestamp_ms()})
             return
@@ -360,13 +455,16 @@ class LobbyHandler(BaseHTTPRequestHandler):
         if self.path == "/v1/queue/join":
             session_id = str(payload.get("session_id", ""))
             mode = str(payload.get("mode", "mixed"))
-            if not session_id:
-                _json(self, HTTPStatus.BAD_REQUEST, {"error": "missing_session_id"})
+            if not _valid_identifier(session_id):
+                _json(self, HTTPStatus.BAD_REQUEST, {"error": "invalid_session_id"})
                 return
             if not _require_mode(mode):
                 _json(self, HTTPStatus.BAD_REQUEST, {"error": "invalid_mode"})
                 return
             with LOCK:
+                if session_id not in SESSIONS:
+                    _json(self, HTTPStatus.UNAUTHORIZED, {"error": "unknown_session"})
+                    return
                 state = QUEUES[mode]
                 now_ms = _timestamp_ms()
                 last_join_ms = int(state.last_join_ms.get(session_id, 0))
@@ -411,16 +509,49 @@ class LobbyHandler(BaseHTTPRequestHandler):
                 )
             return
 
+        if self.path == "/v1/match/accept":
+            session_id = str(payload.get("session_id", ""))
+            mode = str(payload.get("mode", "mixed"))
+            match_id = str(payload.get("match_id", ""))
+            match_token = str(payload.get("match_token", ""))
+            if not _valid_identifier(session_id) or not _require_mode(mode):
+                _json(self, HTTPStatus.BAD_REQUEST, {"error": "invalid_assignment"})
+                return
+            with LOCK:
+                if session_id not in SESSIONS:
+                    _json(self, HTTPStatus.UNAUTHORIZED, {"error": "unknown_session"})
+                    return
+                pending = QUEUES[mode].pending_assignments.get(session_id)
+                if (
+                    pending is None
+                    or pending.match_id != match_id
+                    or not hmac.compare_digest(pending.match_token, match_token)
+                    or pending.token_expires_ms <= _timestamp_ms()
+                ):
+                    _json(self, HTTPStatus.CONFLICT, {"error": "assignment_invalid_or_expired"})
+                    return
+                pending.accepted = True
+            _json(self, HTTPStatus.OK, {"ok": True, "timestamp_ms": _timestamp_ms()})
+            return
+
         if self.path == "/v1/queue/leave":
             session_id = str(payload.get("session_id", ""))
             mode = str(payload.get("mode", "mixed"))
             if not _require_mode(mode):
                 _json(self, HTTPStatus.BAD_REQUEST, {"error": "invalid_mode"})
                 return
+            if not _valid_identifier(session_id):
+                _json(self, HTTPStatus.BAD_REQUEST, {"error": "invalid_session_id"})
+                return
             with LOCK:
+                if session_id not in SESSIONS:
+                    _json(self, HTTPStatus.UNAUTHORIZED, {"error": "unknown_session"})
+                    return
                 state = QUEUES[mode]
                 state.waiting = deque([s for s in state.waiting if s != session_id])
-                state.pending_assignments.pop(session_id, None)
+                pending = state.pending_assignments.pop(session_id, None)
+                if pending is not None:
+                    _remove_player_from_match(state, pending.match_id, session_id)
             _json(self, HTTPStatus.OK, {"ok": True, "timestamp_ms": _timestamp_ms()})
             return
 
@@ -428,6 +559,8 @@ class LobbyHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    if not MATCH_TOKEN_SECRET:
+        raise SystemExit("MATCH_TOKEN_SECRET is required and must also be configured on match servers")
     server = ThreadingHTTPServer((HOST, PORT), LobbyHandler)
     print(f"[lobby-service] listening on http://{HOST}:{PORT} cap={ACTIVE_MATCH_CAP}")
     server.serve_forever()

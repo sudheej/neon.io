@@ -47,6 +47,13 @@ LOBBY_URL="${NEON_LOBBY_URL:-http://127.0.0.1:8080}"
 LOBBY_HEALTH="${LOBBY_URL%/}/healthz"
 LOBBY_HOST_DEFAULT="${LOBBY_HOST:-127.0.0.1}"
 LOBBY_PORT_DEFAULT="${LOBBY_PORT:-8080}"
+MATCH_AUTH_SECRET="${NEON_MATCH_TOKEN_SECRET:-}"
+if [[ -z "$MATCH_AUTH_SECRET" ]]; then
+  IFS= read -r match_secret_part_one </proc/sys/kernel/random/uuid
+  IFS= read -r match_secret_part_two </proc/sys/kernel/random/uuid
+  MATCH_AUTH_SECRET="${match_secret_part_one}${match_secret_part_two}"
+fi
+MATCH_ID_SUFFIX_OVERRIDE="${NEON_MATCH_ID_SUFFIX:-local-playtest}"
 
 is_headless_request() {
   for arg in "${EXTRA_ARGS[@]}"; do
@@ -75,6 +82,8 @@ start_lobby_service() {
     MIN_PLAYERS_TO_START_HUMAN_ONLY="$min_human" \
     MIN_PLAYERS_TO_START_MIXED="$min_mixed" \
     PLAYTEST_KEY="$PLAYTEST_KEY_OVERRIDE" \
+    MATCH_TOKEN_SECRET="$MATCH_AUTH_SECRET" \
+    MATCH_ID_SUFFIX="$MATCH_ID_SUFFIX_OVERRIDE" \
     nohup python3 app.py >/tmp/neon_lobby.log 2>&1 &
     echo $! >/tmp/neon_lobby.pid
   )
@@ -143,6 +152,8 @@ start_human_mode_server() {
     NEON_NET_LOG=1 \
     NEON_PORT=7000 \
     NEON_MAX_PLAYERS=10 \
+    NEON_MATCH_TOKEN_SECRET="$MATCH_AUTH_SECRET" \
+    NEON_MATCH_ID="human_only_${MATCH_ID_SUFFIX_OVERRIDE}" \
     "$BIN" $VERBOSE_FLAG --headless --path "$ROOT_DIR" >/tmp/neon_human_server.log 2>&1 &
   echo $! >/tmp/neon_human_server.pid
 }
@@ -157,6 +168,8 @@ start_mixed_mode_server() {
     NEON_NET_LOG=1 \
     NEON_PORT=7000 \
     NEON_MAX_PLAYERS=10 \
+    NEON_MATCH_TOKEN_SECRET="$MATCH_AUTH_SECRET" \
+    NEON_MATCH_ID="mixed_${MATCH_ID_SUFFIX_OVERRIDE}" \
     "$BIN" $VERBOSE_FLAG --headless --path "$ROOT_DIR" >/tmp/neon_mixed_server.log 2>&1 &
   echo $! >/tmp/neon_mixed_server.pid
 }

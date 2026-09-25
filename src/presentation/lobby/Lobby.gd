@@ -17,6 +17,7 @@ var _mode_name: String = "mixed"
 var _session_id: String = ""
 var _player_id: String = ""
 var _playtest_key: String = ""
+var _previous_session_id: String = ""
 
 @onready var status_label: Label = $HUD/Center/Panel/Margin/VBox/Status
 @onready var mode_value_label: Label = $HUD/Center/Panel/Margin/VBox/ModeValue
@@ -28,6 +29,8 @@ var _playtest_key: String = ""
 func _ready() -> void:
 	randomize()
 	_apply_lobby_url_overrides()
+	if SessionConfig.requeue_on_lobby_entry:
+		_previous_session_id = SessionConfig.session_id
 	_mode_name = String(SessionConfig.selected_mode)
 	if not ONLINE_MODES.has(_mode_name):
 		_mode_name = "mixed"
@@ -69,6 +72,14 @@ func _queue_online_mode(mode_name: String) -> void:
 	_busy = true
 	_status_line = "Connecting lobby..."
 	_update_label()
+	if not _previous_session_id.is_empty():
+		# Release the previous match reservation before creating a fresh identity.
+		# This prevents normal death/requeue cycles from leaking lobby capacity.
+		await _post_json("/v1/queue/leave", {
+			"session_id": _previous_session_id,
+			"mode": mode_name
+		})
+		_previous_session_id = ""
 
 	var hello_resp := await _hello()
 	if not _is_http_ok(hello_resp):
@@ -145,6 +156,18 @@ func _handle_queue_response(payload: Dictionary) -> bool:
 	return false
 
 func _join_assigned_match(payload: Dictionary) -> void:
+	_busy = true
+	_status_line = "Confirming match..."
+	_update_label()
+	var accept_response := await _post_json("/v1/match/accept", {
+		"session_id": _session_id,
+		"mode": _mode_name,
+		"match_id": String(payload.get("match_id", "")),
+		"match_token": String(payload.get("match_token", ""))
+	})
+	if not _is_http_ok(accept_response) or not bool(accept_response.get("ok", false)):
+		_set_error("Match confirmation failed: %s" % _request_error_text(accept_response))
+		return
 	var endpoint := String(payload.get("endpoint", "127.0.0.1:7000"))
 	var host := endpoint
 	var port := 7000

@@ -78,8 +78,7 @@ Gameplay systems:
   - `--no-telemetry` disables telemetry prints
   - Game over overlay in `scenes/World.tscn` when human dies; press R to restart
   - Game over shows Time Survived in hh:mm:ss with pulsing animation (`GameOver/TimeSurvived`)
-  - camera centers on active cell with smoothed follow
-    - online mode currently has a minor camera recenter/follow edge case around local death/respawn transitions (tracked in `TODO.md`)
+  - camera centers on active cell with smoothed follow and rebinds/recenters on online respawn
   - boost orbs (`src/presentation/world/BoostOrb.gd`) spawn when any combatant dies:
     - types: XP, weapon-specific ammo, health
     - ammo orb color maps to weapon color (laser cyan, stun green, homing orange, spread purple)

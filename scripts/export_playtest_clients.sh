@@ -67,13 +67,27 @@ LINUX_BIN_PATH="$LINUX_DIR/neon_client.x86_64"
 WINDOWS_BIN_PATH="$WINDOWS_DIR/neon_client.exe"
 
 mkdir -p "$LINUX_DIR" "$WINDOWS_DIR"
+STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/neon-export.XXXXXX")"
+trap 'rm -rf "$STAGING_DIR"' EXIT
+STAGED_LINUX="$STAGING_DIR/neon_client.x86_64"
+STAGED_WINDOWS="$STAGING_DIR/neon_client.exe"
 
 echo "[export] Exporting Linux client -> $LINUX_BIN_PATH"
-"$BIN" --headless --path "$ROOT_DIR" --export-release "Linux/X11" "$LINUX_BIN_PATH"
+"$BIN" --headless --path "$ROOT_DIR" --export-release "Linux/X11" "$STAGED_LINUX"
+if [[ ! -s "$STAGED_LINUX" ]]; then
+  echo "[export] ERROR: Godot did not produce a Linux executable (it may have returned success despite missing templates)." >&2
+  exit 1
+fi
 
 echo "[export] Exporting Windows client -> $WINDOWS_BIN_PATH"
-"$BIN" --headless --path "$ROOT_DIR" --export-release "Windows Desktop" "$WINDOWS_BIN_PATH"
+"$BIN" --headless --path "$ROOT_DIR" --export-release "Windows Desktop" "$STAGED_WINDOWS"
+if [[ ! -s "$STAGED_WINDOWS" ]]; then
+  echo "[export] ERROR: Godot did not produce a Windows executable (it may have returned success despite missing templates)." >&2
+  exit 1
+fi
 
+mv "$STAGED_LINUX" "$LINUX_BIN_PATH"
+mv "$STAGED_WINDOWS" "$WINDOWS_BIN_PATH"
 chmod +x "$LINUX_BIN_PATH"
 
 cat >"$LINUX_DIR/start_client.sh" <<'EOF'

@@ -36,7 +36,10 @@ const REQUIRED_FIELDS: PackedStringArray = [
 ]
 
 static func now_ms() -> int:
-	return Time.get_ticks_msec()
+	# Wire timestamps must be comparable across separate client/server processes.
+	# get_ticks_msec() is relative to each process start and can make valid client
+	# commands appear to be far in the future on a recently started server.
+	return int(Time.get_unix_time_from_system() * 1000.0)
 
 static func is_valid_msg_type(msg_type: String) -> bool:
 	return MESSAGE_TYPES.has(msg_type)

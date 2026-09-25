@@ -50,6 +50,8 @@ func _initialize() -> void:
 	server_adapter.role = "server"
 	server_adapter.transport = "enet"
 	server_adapter.player_id = "server"
+	server_adapter.match_token_secret = "test-secret"
+	server_adapter.match_id = "m1"
 	server_root.add_child(server_adapter)
 
 	var client_adapter := NetworkAdapter.new()
@@ -59,6 +61,8 @@ func _initialize() -> void:
 	client_adapter.transport = "enet"
 	client_adapter.player_id = "smoke_client"
 	client_adapter.session_id = "smoke_session"
+	client_adapter.local_actor_id = "smoke_client_actor"
+	client_adapter.match_token = _signed_token("smoke_session", "smoke_client", "m1", "smoke_client_actor")
 	client_root.add_child(client_adapter)
 
 	server_adapter.command_received.connect(_on_server_command_received)
@@ -132,6 +136,12 @@ func _initialize() -> void:
 
 	print("[enet_single_process_smoke] PASS")
 	quit(0)
+
+func _signed_token(session: String, player: String, target_match: String, actor: String) -> String:
+	var claims := JSON.stringify({"actor_id": actor, "expires_at_ms": int(Time.get_unix_time_from_system() * 1000.0) + 60000, "match_id": target_match, "player_id": player, "session_id": session})
+	var encoded := Marshalls.raw_to_base64(claims.to_utf8_buffer()).replace("+", "-").replace("/", "_").trim_suffix("=")
+	var signature := Crypto.new().hmac_digest(HashingContext.HASH_SHA256, "test-secret".to_utf8_buffer(), encoded.to_utf8_buffer())
+	return "%s.%s" % [encoded, Marshalls.raw_to_base64(signature).replace("+", "-").replace("/", "_").trim_suffix("=")]
 
 func _on_server_command_received(command) -> void:
 	if command == null:

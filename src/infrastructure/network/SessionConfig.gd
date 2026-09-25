@@ -17,6 +17,7 @@ static var local_actor_id: String = "player"
 static var net_log: bool = false
 static var match_id: String = ""
 static var match_token: String = ""
+static var match_token_secret: String = ""
 
 static func configure_offline(mode_name: String = "offline_ai") -> void:
 	selected_mode = mode_name
@@ -29,6 +30,7 @@ static func configure_offline(mode_name: String = "offline_ai") -> void:
 	local_actor_id = "player"
 	match_id = ""
 	match_token = ""
+	match_token_secret = ""
 
 static func configure_online_client(
 	mode_name: String,

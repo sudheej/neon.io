@@ -94,6 +94,8 @@ var _last_local_player_ref: Node2D = null
 var _bound_local_death_actor: Node = null
 var _bound_input_actor_id: String = ""
 var _network_adapter: Node = null
+var _network_was_connected: bool = false
+var _network_return_pending: bool = false
 var _last_network_state_tick: int = -1
 var _replicated_actor_ids: Dictionary = {}
 var _replicated_orb_ids: Dictionary = {}
@@ -145,6 +147,11 @@ func _ready() -> void:
 		game_over_lobby_button.pressed.connect(_on_game_over_lobby_pressed)
 
 func _exit_tree() -> void:
+	# A paused SceneTree outlives this world. Never let a scene transition or a
+	# direct test teardown leave the next session globally frozen.
+	if game_paused:
+		get_tree().paused = false
+		game_paused = false
 	_cleanup_transient_audio()
 	awesome_sfx = null
 	message_sfx = null
@@ -200,6 +207,7 @@ func _input(event: InputEvent) -> void:
 		var key_event: InputEventKey = event as InputEventKey
 		if key_event.keycode == KEY_ESCAPE:
 			SessionConfig.requeue_on_lobby_entry = false
+			_prepare_scene_transition()
 			get_tree().change_scene_to_file(_lobby_scene_for_current_mode())
 			get_viewport().set_input_as_handled()
 			return
@@ -209,6 +217,10 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("toggle_mute"):
 		_toggle_mute()
+		# Keep the polling fallback latched until release. Without this, the
+		# same physical press is observed again by _process and immediately
+		# toggles audio back to its previous state.
+		mute_toggle_was_pressed = true
 		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -219,11 +231,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	if game_paused:
 		return
 	if event.is_action_pressed("restart_game"):
-		get_tree().reload_current_scene()
+		request_restart()
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key_event: InputEventKey = event as InputEventKey
 		if key_event.keycode == KEY_ESCAPE:
 			SessionConfig.requeue_on_lobby_entry = false
+			_prepare_scene_transition()
 			get_tree().change_scene_to_file(_lobby_scene_for_current_mode())
 
 func _process(delta: float) -> void:
@@ -306,6 +319,19 @@ func _refresh_local_player() -> void:
 		_bind_input_sources()
 		_bind_hud_targets()
 		_bound_input_actor_id = local_actor_id
+
+func _adopt_local_player(actor: Node2D) -> void:
+	if actor == null or not is_instance_valid(actor):
+		return
+	if local_player == actor and _last_local_player_ref == actor:
+		return
+	local_player = actor
+	_last_local_player_ref = actor
+	_snap_camera_to_local_player()
+	_ensure_local_player_death_hook()
+	_bind_input_sources()
+	_bind_hud_targets()
+	_bound_input_actor_id = local_actor_id
 
 func _snap_camera_to_local_player() -> void:
 	if camera == null or local_player == null or not is_instance_valid(local_player):
@@ -672,6 +698,10 @@ func _handle_pause_input(event: InputEvent) -> bool:
 	if not is_pause_key or not _can_toggle_pause():
 		return false
 	_toggle_pause()
+	# _process also polls keyboard state for environments where input events
+	# are unavailable. Latch event-driven presses so one key press cannot be
+	# applied twice in the same frame.
+	pause_toggle_was_pressed = true
 	get_viewport().set_input_as_handled()
 	return true
 
@@ -787,6 +817,7 @@ func _do_hud_screenshot(delay: float, path: String) -> void:
 		image.save_png(path)
 
 func request_restart() -> void:
+	_prepare_scene_transition()
 	get_tree().reload_current_scene()
 
 func _on_game_over_restart_pressed() -> void:
@@ -794,7 +825,17 @@ func _on_game_over_restart_pressed() -> void:
 
 func _on_game_over_lobby_pressed() -> void:
 	SessionConfig.requeue_on_lobby_entry = false
+	_prepare_scene_transition()
 	get_tree().change_scene_to_file(_lobby_scene_for_current_mode())
+
+func _prepare_scene_transition() -> void:
+	# SceneTree.paused is global and survives reload_current_scene(). Reset both
+	# representations before every transition, including programmatic restarts.
+	game_paused = false
+	pause_toggle_was_pressed = false
+	var tree := get_tree()
+	if tree != null:
+		tree.paused = false
 
 func _lobby_scene_for_current_mode() -> String:
 	return MODE_SELECT_SCENE
@@ -1213,6 +1254,7 @@ func _should_return_to_lobby_on_death() -> bool:
 
 func _return_to_lobby() -> void:
 	SessionConfig.requeue_on_lobby_entry = true
+	_prepare_scene_transition()
 	if game_over_layer != null:
 		game_over_layer.visible = false
 	call_deferred("_deferred_return_to_lobby")
@@ -1220,6 +1262,9 @@ func _return_to_lobby() -> void:
 func _deferred_return_to_lobby() -> void:
 	var timer = get_tree().create_timer(0.35)
 	await timer.timeout
+	if not is_inside_tree():
+		return
+	_prepare_scene_transition()
 	get_tree().change_scene_to_file(MODE_SELECT_SCENE)
 
 func _configure_dedicated_server_presentation() -> void:
@@ -1279,6 +1324,36 @@ func _bind_network_adapter() -> void:
 		return
 	if _network_adapter.has_signal("state_received") and not _network_adapter.is_connected("state_received", Callable(self, "_on_network_state_received")):
 		_network_adapter.connect("state_received", Callable(self, "_on_network_state_received"))
+	if _network_adapter.has_signal("connection_changed") and not _network_adapter.is_connected("connection_changed", Callable(self, "_on_network_connection_changed")):
+		_network_adapter.connect("connection_changed", Callable(self, "_on_network_connection_changed"))
+	if _network_adapter.has_signal("protocol_error") and not _network_adapter.is_connected("protocol_error", Callable(self, "_on_network_protocol_error")):
+		_network_adapter.connect("protocol_error", Callable(self, "_on_network_protocol_error"))
+	if _network_adapter.has_method("net_is_connected"):
+		_network_was_connected = bool(_network_adapter.call("net_is_connected"))
+
+func _on_network_connection_changed(connected: bool) -> void:
+	if connected:
+		_network_was_connected = true
+		return
+	if _network_was_connected:
+		_schedule_network_return("CONNECTION LOST")
+
+func _on_network_protocol_error(reason: String) -> void:
+	if not _is_online_client():
+		return
+	var fatal_reasons: PackedStringArray = [
+		"connection_failed", "server_disconnected", "authentication_required",
+		"invalid_match_credentials", "identity_already_connected"
+	]
+	if fatal_reasons.has(reason) or reason.begins_with("enet_start_failed"):
+		_schedule_network_return("NETWORK ERROR")
+
+func _schedule_network_return(message: String) -> void:
+	if _network_return_pending or dedicated_server or not _is_online_client():
+		return
+	_network_return_pending = true
+	_show_general_announcement(message, null, 0.0)
+	_return_to_lobby()
 
 func _on_network_state_received(state: Dictionary) -> void:
 	if not _is_online_client():
@@ -1328,6 +1403,7 @@ func _apply_full_actor_state(raw_actors) -> void:
 		var id := String(actor_id)
 		if not present_remote_ids.has(id):
 			_remove_replicated_actor(id)
+	_refresh_local_player()
 
 func _apply_delta_actor_state(data: Dictionary) -> void:
 	var removes_raw = data.get("actors_remove", [])
@@ -1356,6 +1432,7 @@ func _apply_delta_actor_state(data: Dictionary) -> void:
 				actor = _ensure_replicated_actor(actor_id, actor_data)
 			if actor != null:
 				_apply_actor_state(actor, actor_data)
+	_refresh_local_player()
 
 func _apply_full_orb_state(raw_orbs) -> void:
 	var present_orb_ids: Dictionary = {}
@@ -1403,6 +1480,7 @@ func _ensure_local_network_actor(actor_data: Dictionary) -> Node2D:
 	if existing != null and is_instance_valid(existing):
 		if existing.has_method("set_network_driven"):
 			existing.set_network_driven(true)
+		_adopt_local_player(existing)
 		return existing
 	if (
 		player != null
@@ -1418,6 +1496,7 @@ func _ensure_local_network_actor(actor_data: Dictionary) -> Node2D:
 		if player.has_method("set_network_driven"):
 			player.set_network_driven(true)
 		_register_actor_with_world(player)
+		_adopt_local_player(player)
 		return player
 	var actor := PlayerScene.instantiate() as Node2D
 	if actor == null:
@@ -1442,6 +1521,7 @@ func _ensure_local_network_actor(actor_data: Dictionary) -> Node2D:
 	_register_actor_with_world(actor)
 	if actor.has_signal("died"):
 		actor.died.connect(_on_combatant_died)
+	_adopt_local_player(actor)
 	return actor
 
 func _ensure_replicated_actor(actor_id: String, actor_data: Dictionary) -> Node2D:
@@ -1631,6 +1711,9 @@ func _remove_local_network_actor() -> void:
 	_net_target_pos_by_actor.erase(local_actor_id)
 	var actor := _find_actor_by_id(local_actor_id)
 	if actor != null and is_instance_valid(actor):
+		if actor == local_player:
+			local_player = null
+			_last_local_player_ref = null
 		if actor == _bound_local_death_actor:
 			_bound_local_death_actor = null
 		actor.queue_free()

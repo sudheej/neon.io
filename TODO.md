@@ -14,8 +14,7 @@
   - boost orbs now drop and render in online modes (`mixed`, `human_only`)
   - weapon HUD ammo now reflects online drain/refill correctly
   - XP orb gains now reflect on replicated credits (`xp`) value
-- Remaining minor issue:
-  - camera recenter/follow still needs final polish around local death/respawn transitions under prolonged soak.
+- Camera recenter/follow around local death/respawn is fixed and regression-tested.
 
 ### Debug Findings (2026-02-15, this session)
 - Root cause identified in `src/infrastructure/network/NetworkAdapter.gd`:
@@ -81,12 +80,12 @@
   - server path no longer forces offline config in `src/presentation/main/Main.gd`.
 
 ### Highest-priority next actions
-- [ ] Camera polish:
+- [x] Camera polish:
   - tighten local camera recenter/follow on death/respawn actor transitions in online mode.
-- [ ] Add one dedicated external-runtime smoke test:
+- [x] Add one dedicated external-runtime smoke test:
   - boot one headless server + one client and assert `connection_changed(true)` within timeout.
   - fail test if client remains `conn=0`.
-- [ ] Add one longer online replication soak:
+- [x] Add one longer online replication soak:
   - 5+ minute dual-client run in both human_only and mixed modes and verify no command starvation/jitter regressions.
 
 ### Completed in repo
@@ -231,7 +230,7 @@ This is the execution plan for:
 
 ### P2.2 Scene/server boundaries
 - [ ] Introduce server-only match scene/bootstrap if needed.
-- [ ] Ensure `GameWorld` can run without local human input nodes.
+- [x] Ensure `GameWorld` can run without local human input nodes.
 - [x] Add dynamic actor spawn/registration API by `actor_id`.
 
 ### P2.3 AI policy by mode
@@ -240,9 +239,9 @@ This is the execution plan for:
 - [x] `human_only`: AI spawn disabled.
 
 ### Exit criteria
-- [ ] Headless server process starts and simulates match loop.
-- [ ] No dependency on local UI for authoritative execution.
-- [ ] Mode toggles validated in logs.
+- [x] Headless server process starts and simulates match loop.
+- [x] No dependency on local UI for authoritative execution.
+- [x] Mode toggles validated in logs.
 
 ---
 
@@ -268,7 +267,7 @@ This is the execution plan for:
 ### Exit criteria
 - [x] Two online clients can connect and receive authoritative state.
 - [x] Command->apply path observed on server with actor ownership checks.
-- [ ] Snapshot stream stable for 5+ minutes without fatal errors.
+- [x] Snapshot stream stable for 5+ minutes without fatal errors in both human-only and mixed two-client runs.
 
 ---
 
@@ -293,8 +292,8 @@ This is the execution plan for:
 
 ### Exit criteria
 - [ ] 10 concurrent humans supported in one match process.
-- [ ] Cheating via client-side state mutation is ineffective.
-- [ ] Local UI follows local player in multiplayer correctly (minor camera respawn edge case remains).
+- [x] Cheating via client-side state mutation is ineffective (server authority, peer identity, actor binding, replay/rate checks).
+- [x] Local UI follows local player in multiplayer correctly, including respawn rebinding.
 
 ---
 
@@ -321,9 +320,9 @@ This is the execution plan for:
 - [x] Handle assignment expiration and retry.
 
 ### Exit criteria
-- [ ] Players can join/leave queues reliably.
-- [ ] Overflow behavior works consistently at/over 10 active.
-- [ ] Assignment payload consumed by client successfully.
+- [x] Players can join/leave queues reliably.
+- [x] Overflow behavior works consistently at/over 10 active.
+- [x] Assignment payload consumed by client successfully.
 
 ---
 
@@ -343,8 +342,8 @@ This is the execution plan for:
   - mode
 
 ### P6.3 Capacity policy
-- [ ] Keep hard cap `10` active players per match.
-- [ ] Place over-cap into lobby wait state.
+- [x] Keep hard cap `10` active players per match.
+- [x] Place over-cap into lobby wait state.
 - [ ] Optionally define multiple simultaneous matches per mode.
 
 ### Exit criteria
@@ -445,12 +444,12 @@ This is the execution plan for:
 ## Phase 11 - QA and Load Validation
 
 ### P11.1 Automated tests
-- [ ] Protocol encode/decode tests.
-- [ ] Authority validation tests.
-- [ ] Queue fairness and overflow behavior tests.
+- [x] Protocol encode/decode tests.
+- [x] Authority validation tests.
+- [x] Queue fairness and overflow behavior tests.
 
 ### P11.2 Soak/load tests
-- [ ] 10 active + waiting overflow scenario.
+- [x] 10 active + waiting overflow scenario.
 - [ ] Repeated death->requeue cycles.
 - [ ] Mode-switch churn and reconnect storm tests.
 

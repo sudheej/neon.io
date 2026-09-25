@@ -134,6 +134,15 @@ func _initialize() -> void:
 			push_error("world_replication_smoke failed: local actor respawn position not applied")
 			quit(1)
 			return
+		var camera := world.get_node_or_null("Camera2D") as Camera2D
+		if camera == null or not camera.global_position.is_equal_approx(local_pos):
+			push_error("world_replication_smoke failed: camera did not recenter on local respawn")
+			quit(1)
+			return
+		if world.get("local_player") != local_actor:
+			push_error("world_replication_smoke failed: respawned local actor was not rebound")
+			quit(1)
+			return
 
 	world.call("_on_network_state_received", {
 		"tick": 4,
@@ -164,6 +173,23 @@ func _initialize() -> void:
 		quit(1)
 		return
 
+	world.call("_on_network_state_received", {
+		"tick": 5,
+		"data": {
+			"time": 1.4,
+			"actors_upsert": [{
+				"id": "player",
+				"position": {"x": 640.0, "y": 480.0}
+			}]
+		}
+	})
+	await process_frame
+	var camera_after_move := world.get_node_or_null("Camera2D") as Camera2D
+	if camera_after_move == null or camera_after_move.global_position.distance_to(Vector2(640.0, 480.0)) > 0.1:
+		push_error("world_replication_smoke failed: camera stopped following after local respawn")
+		quit(1)
+		return
+
 	remote = world.call("_find_actor_by_id", "remote_1")
 	if remote == null:
 		push_error("world_replication_smoke failed: remote actor missing after remove+upsert")
@@ -174,8 +200,17 @@ func _initialize() -> void:
 		quit(1)
 		return
 
+	world.call("_on_network_protocol_error", "server_disconnected")
+	if not bool(world.get("_network_return_pending")) or not SessionConfig.requeue_on_lobby_entry:
+		push_error("world_replication_smoke failed: disconnect did not schedule lobby recovery")
+		quit(1)
+		return
+
 	world.queue_free()
-	await process_frame
+	# Give transient projectile audio playbacks time to observe their queued node
+	# teardown before SceneTree exits; immediate exit leaves backend playback
+	# references alive and produces false-positive ObjectDB leak diagnostics.
+	await create_timer(1.0).timeout
 
 	print("[world_replication_smoke] PASS")
 	quit(0)

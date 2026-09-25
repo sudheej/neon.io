@@ -159,28 +159,36 @@ func _validate_command(command) -> bool:
 		return true
 	var net_meta = payload.get("__net")
 	if not (net_meta is Dictionary):
-		return true
+		return false
+	# Scene lifecycle is server-owned. A remote player's local restart shortcut
+	# must never reload the authoritative match for every connected player.
+	if int(command.type) == GameCommand.Type.RESTART:
+		return false
 	var actor_id := String(command.actor_id)
 	if actor_id.is_empty():
 		return false
 	var player_id := String(net_meta.get("player_id", ""))
 	if player_id.is_empty():
 		return false
-	if not _validate_actor_owner(actor_id, player_id):
+	if not _actor_owner_matches(actor_id, player_id):
 		return false
 	if not _validate_timestamp_ms(int(net_meta.get("timestamp_ms", 0))):
 		return false
-	if not _validate_sequence(actor_id, int(net_meta.get("seq", -1))):
+	var seq := int(net_meta.get("seq", -1))
+	if not _sequence_is_new(actor_id, seq):
 		return false
 	if not _validate_rate_limit(actor_id):
 		return false
-	return true
-
-func _validate_actor_owner(actor_id: String, player_id: String) -> bool:
+	# Commit identity and replay state only after the whole command validates.
+	# Otherwise an invalid first packet can permanently claim an actor, and a
+	# rate-limited packet can consume a sequence number without being applied.
 	if not _owner_by_actor.has(actor_id):
 		_owner_by_actor[actor_id] = player_id
-		return true
-	return String(_owner_by_actor[actor_id]) == player_id
+	_last_seq_by_actor[actor_id] = seq
+	return true
+
+func _actor_owner_matches(actor_id: String, player_id: String) -> bool:
+	return not _owner_by_actor.has(actor_id) or String(_owner_by_actor[actor_id]) == player_id
 
 func _validate_rate_limit(actor_id: String) -> bool:
 	var now_ms: int = Time.get_ticks_msec()
@@ -199,19 +207,16 @@ func _validate_rate_limit(actor_id: String) -> bool:
 	_rate_window_by_actor[actor_id] = bucket
 	return count <= max(max_commands_per_second_per_actor, 1)
 
-func _validate_sequence(actor_id: String, seq: int) -> bool:
+func _sequence_is_new(actor_id: String, seq: int) -> bool:
 	if seq < 0:
 		return false
 	var last_seq: int = int(_last_seq_by_actor.get(actor_id, -1))
-	if seq <= last_seq:
-		return false
-	_last_seq_by_actor[actor_id] = seq
-	return true
+	return seq > last_seq
 
 func _validate_timestamp_ms(timestamp_ms: int) -> bool:
 	if timestamp_ms <= 0:
 		return false
-	var now_ms: int = Time.get_ticks_msec()
+	var now_ms: int = int(Time.get_unix_time_from_system() * 1000.0)
 	if timestamp_ms > now_ms + max(max_future_command_ms, 0):
 		return false
 	return true
@@ -339,11 +344,11 @@ func _request_restart() -> void:
 		get_tree().reload_current_scene()
 
 func _set_input_disabled() -> void:
+	# Disable only the Player script's legacy gameplay polling. World still owns
+	# global UI/lifecycle input such as pause, mute, and returning to the menu.
 	var player = get_tree().get_first_node_in_group("player")
 	if player != null and player.has_method("set_input_enabled"):
 		player.set_input_enabled(false)
-	if _world != null and _world.has_method("set"):
-		_world.set("input_enabled", false)
 
 func _connect_player_events() -> void:
 	var player = get_tree().get_first_node_in_group("player")
@@ -364,6 +369,8 @@ func _connect_network() -> void:
 		_network.connect("snapshot_ack_received", Callable(self, "_on_snapshot_ack_received"))
 	if _network.has_signal("resync_requested"):
 		_network.connect("resync_requested", Callable(self, "_on_resync_requested"))
+	if _network.has_signal("peer_disconnected_authenticated"):
+		_network.connect("peer_disconnected_authenticated", Callable(self, "_on_authenticated_peer_disconnected"))
 	if self.has_signal("event_emitted"):
 		event_emitted.connect(_on_event_emitted)
 
@@ -411,6 +418,15 @@ func _on_resync_requested(_player_id: String, _reason: String) -> void:
 		return
 	_force_full_snapshot_once = true
 	_emit_snapshot()
+
+func _on_authenticated_peer_disconnected(_peer_id: int, player_id: String, actor_id: String) -> void:
+	if String(_owner_by_actor.get(actor_id, "")) != player_id:
+		return
+	var actor := _resolve_actor(actor_id)
+	unregister_actor(actor_id)
+	_acked_tick_by_player.erase(player_id)
+	if actor != null and is_instance_valid(actor) and not actor.is_queued_for_deletion():
+		actor.queue_free()
 
 func _is_authoritative_network_server() -> bool:
 	if _network == null or not is_instance_valid(_network):
